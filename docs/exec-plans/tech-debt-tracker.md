@@ -75,3 +75,11 @@ Low-severity polish, left for a follow-up; none blocks the core flow.
 | Custom `FileNotFoundError` shadowed the built-in | Renamed to `FileNotFoundServiceError` |
 | Dropzone accepted any file type client-side | `accept` allow-list mirroring backend `ALLOWED_TYPES` (tested for drift) |
 | No test harness for feature specs | pytest suite across upload, files, activity, errors, validation, rate limit, pagination |
+
+## 2026-08-07 — verify
+
+Nitpicks surfaced by the /sample-3-verify 3-lens UX funnel (goal: ingest the sample slide → run CLAM extraction → view output). Backlog only — not looped on.
+
+- Slide detail, extraction in progress — the stage stepper dwells ~22s of a ~25s run on "Tiling tissue regions" with only an indeterminate spinner within the active stage → add a per-stage sub-progress counter (e.g. patches embedded N/total) so the long in-stage dwell doesn't look static (.local/verify/B2/B2-11-stage-tiling.png)
+- Slide preview pane — after a preview tab-switch or a mid-op reload the `bg-black` preview box shows a ~1s solid-black frame between `<img>` mount and decode, with no skeleton/spinner overlay → render a skeleton/placeholder while the presigned B2 image decodes (.local/verify/B2/B2-06-reload-slide.png)
+- Ingest → extraction — extraction is a manual "Run extraction" click on the slide page rather than auto-chaining after ingest (intentional and signposted); consider an optional one-click "ingest + extract" for the sample golden path (.local/verify/A/A-11-detail-extracted.png)

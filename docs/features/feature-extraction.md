@@ -30,6 +30,7 @@ Turn each tissue patch into a compact embedding and store one per-slide feature 
 
 ## Flow
 - `registered → extracting` (persisted) → tile → write patch PNGs → embed → write `embeddings.pt` → write previews → `extracted` (or `failed` with `error`).
+- While `extracting`, the manifest also carries a coarse `stage` (`tiling → embedding → finalizing`), persisted at each boundary and cleared (null) on any terminal status. The client polls it during the run so the in-progress view advances through labelled steps instead of a single spinner.
 
 ## Edge Cases
 - No GPU → runs on CPU (never asserts a GPU); MPS falls back to CPU where a torchvision op is unsupported.
@@ -38,7 +39,7 @@ Turn each tissue patch into a compact embedding and store one per-slide feature 
 - Encoder weights missing → downloaded once (~100 MB) to `services/api/.torch_cache` and cached.
 
 ## UX States (if applicable)
-- Loading: "Feature extraction running" alert; the slide page polls until `extracted`/`failed`.
+- Loading: "Feature extraction running" alert with an advancing stage stepper (Tiling → Embedding → Finalizing). The status badge reads "Extracting" for the whole run — the extract mutation optimistically flips the cached status so the badge and poll start immediately instead of the badge sitting on "Registered". The slide page polls the persisted `stage`/status until `extracted`/`failed`.
 - Error: destructive alert with the failure detail; re-run is available.
 
 ## Verification

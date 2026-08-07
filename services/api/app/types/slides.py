@@ -25,6 +25,12 @@ SlideStatus = Literal[
     "pending_upload", "registered", "extracting", "extracted", "failed"
 ]
 
+# Coarse pipeline stage while `status == "extracting"`, persisted to the manifest
+# as the run moves through its real phases so the in-progress UI advances through
+# labelled steps instead of a single frozen spinner. Cleared (None) on any
+# terminal status.
+SlideStage = Literal["tiling", "embedding", "finalizing"]
+
 # Where the raw WSI comes from.
 SlideSource = Literal["sample", "upload"]
 
@@ -177,6 +183,8 @@ class Slide(SlideSummary):
     level_count: int | None = None
     mpp: float | None = None
     extraction: ExtractionResult | None = None
+    # Coarse in-flight stage while extracting; None on any terminal status.
+    stage: SlideStage | None = None
 
 
 class SlideCreated(BaseModel):

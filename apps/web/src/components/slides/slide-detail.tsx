@@ -4,7 +4,16 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Download, Loader2, Pencil, Play, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Circle,
+  Download,
+  Loader2,
+  Pencil,
+  Play,
+  Trash2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,7 +37,53 @@ import { getSlideAssetUrl } from "@/lib/api-client";
 import { startBrowserDownload } from "@/lib/browser-download";
 import { formatDate } from "@/lib/utils";
 import { useDeleteSlide, useExtractSlide, useSlide } from "@/lib/queries";
-import type { AssetName, Slide } from "@clam-wsi-feature-extraction/shared";
+import type { AssetName, Slide, SlideStage } from "@clam-wsi-feature-extraction/shared";
+
+// Ordered, coarse stages the extraction run reports via the manifest. The
+// stepper advances through these as `useSlide` polls the persisted `stage`.
+const EXTRACTION_STAGES: { key: SlideStage; label: string }[] = [
+  { key: "tiling", label: "Tiling tissue regions" },
+  { key: "embedding", label: "Embedding patches (CNN)" },
+  { key: "finalizing", label: "Writing artifacts to B2" },
+];
+
+function ExtractionProgress({ stage }: { stage: SlideStage | null }) {
+  // Before the server reports its first stage (the optimistic kick-off), treat
+  // the run as being in the first stage so the stepper never looks stalled.
+  const activeIndex = stage
+    ? EXTRACTION_STAGES.findIndex((s) => s.key === stage)
+    : 0;
+  return (
+    <ol className="mt-3 space-y-1.5">
+      {EXTRACTION_STAGES.map((s, i) => {
+        const done = i < activeIndex;
+        const active = i === activeIndex;
+        return (
+          <li key={s.key} className="flex items-center gap-2 text-sm">
+            {done ? (
+              <CheckCircle2 className="h-3.5 w-3.5 text-foreground" aria-hidden="true" />
+            ) : active ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <Circle className="h-3.5 w-3.5 text-muted-foreground/40" aria-hidden="true" />
+            )}
+            <span
+              className={
+                active
+                  ? "font-medium"
+                  : done
+                    ? "text-muted-foreground"
+                    : "text-muted-foreground/60"
+              }
+            >
+              {s.label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 function MetaRow({ label, value }: { label: string; value: ReactNode }) {
   return (
@@ -196,9 +251,12 @@ export function SlideDetail({ id }: { id: string }) {
           <Loader2 className="h-4 w-4 animate-spin" />
           <AlertTitle>Feature extraction running</AlertTitle>
           <AlertDescription>
-            OpenSlide is tiling the slide over tissue regions and the CNN is embedding
-            each patch (weights download on the first run). This can take a bit on CPU —
-            this view updates automatically.
+            <p>
+              OpenSlide tiles the slide over tissue regions and the CNN embeds each
+              patch (weights download on the first run). This can take a bit on CPU —
+              this view advances automatically as each stage completes.
+            </p>
+            <ExtractionProgress stage={slide.stage} />
           </AlertDescription>
         </Alert>
       )}

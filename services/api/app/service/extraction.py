@@ -13,12 +13,19 @@ from datetime import UTC, datetime
 
 from app.repo import get_object_bytes, put_bytes
 from app.service import features, rendering, slides, tiling
-from app.types.slides import ExtractionResult, Slide
+from app.types.slides import ExtractionResult, Slide, SlideStage
 
 logger = logging.getLogger(__name__)
 
 _PNG = "image/png"
 _OCTET = "application/octet-stream"
+
+
+def _advance(slide: Slide, stage: SlideStage) -> None:
+    """Persist a coarse stage transition so the polling UI can advance."""
+    slide.stage = stage
+    slide.updated_at = datetime.now(UTC)
+    slides.persist(slide)
 
 
 def _write_patches(slide_id: str, result: tiling.TilingResult) -> None:
@@ -54,6 +61,7 @@ def run_extraction(slide_id: str) -> Slide:
     if not slide.source_key:
         raise slides.SlideValidationError("Slide has no source to extract from")
     slide.status = "extracting"
+    slide.stage = "tiling"
     slide.updated_at = datetime.now(UTC)
     slide.error = None
     slides.persist(slide)
@@ -63,6 +71,7 @@ def run_extraction(slide_id: str) -> Slide:
         result = tiling.tile_slide(data, slide.patch_level, slide.patch_size)
         _write_patches(slide_id, result)
 
+        _advance(slide, "embedding")
         device = features.resolve_device()
         encoder, dim = features.load_encoder(slide.encoder, device)
         embeddings = features.embed_patches(
@@ -71,6 +80,7 @@ def run_extraction(slide_id: str) -> Slide:
         embeddings_key = f"{slides.SLIDES_PREFIX}{slide_id}/features/embeddings.pt"
         put_bytes(embeddings_key, features.tensor_to_bytes(embeddings), _OCTET)
 
+        _advance(slide, "finalizing")
         _write_previews(slide, result)
         slide.width = result.geometry.width
         slide.height = result.geometry.height
@@ -80,6 +90,7 @@ def run_extraction(slide_id: str) -> Slide:
         slide.feature_dim = dim
         slide.embeddings_key = embeddings_key
         slide.status = "extracted"
+        slide.stage = None
         slide.updated_at = datetime.now(UTC)
         slide.extraction = ExtractionResult(
             encoder=slide.encoder,
@@ -98,6 +109,7 @@ def run_extraction(slide_id: str) -> Slide:
         return slides.persist(slide)
     except Exception as e:
         slide.status = "failed"
+        slide.stage = None
         slide.error = str(e)
         slide.updated_at = datetime.now(UTC)
         slides.persist(slide)

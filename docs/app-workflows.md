@@ -8,17 +8,17 @@ the generic Upload and File Explorer are the kept starter surfaces.
 
 - User navigates to `/slides/new`
 - Chooses a **Slide source** (RadioGroup): **Sample slide (CMU-1-Small-Region)** (default) or **Upload my own WSI**
-- Sets finite options via Selects: **MIL bag label** (default `unknown`), **patch level** (default 0), **patch size** (default 256), **feature encoder** (ResNet50 truncated). Label and notes are free text
+- Sets finite options via Selects: **MIL bag label** (default `unknown`), **patch level** (default 0), **patch size** (default 256), **feature encoder** (ResNet50 truncated). Label and notes are free text; **Label** is pre-filled from the source (`CMU-1-Small-Region` for the sample, the uploaded filename stem for an upload) and stays editable, so the golden path needs no typing
 - **Sample**: submitting fetches the ~1.9 MB test slide server-side, lands it under `slides/<id>/source/`, renders a thumbnail, and navigates to the slide — status `registered`
 - **Upload**: submitting mints a presigned PUT; the browser streams the slide **directly to B2** (a multi-GB slide never passes through the API), then the app finalizes with a register call — status `registered`
-- Safe defaults are surfaced as guidance text (no autofill button)
+- Safe defaults are surfaced as guidance text; the only field pre-filled with an editable value is **Label** (derived from the source), so no separate autofill button is needed
 - See: [Slide Ingest](features/slide-ingest.md)
 
 ## Run Feature Extraction
 
 - On `/slides/[id]`, the user clicks **Run extraction**
 - OpenSlide opens the slide, tissue is segmented, a patch grid is tiled and each patch is written to B2, the truncated ResNet50 embeds every patch, and a `[N_patches, 1024]` `embeddings.pt` + previews + manifest are written back
-- Status flows `registered → extracting → extracted` (or `failed`); the page polls and updates itself
+- Status flows `registered → extracting → extracted` (or `failed`); the page polls and updates itself, and the in-progress alert shows an advancing stage stepper (Tiling → Embedding → Finalizing) driven by the manifest's persisted `stage`. The status badge reads "Extracting" for the whole run
 - The extraction stats card shows the device (auto-detected), patch count, embedding-bag shape, and tissue fraction
 - See: [Feature Extraction](features/feature-extraction.md)
 

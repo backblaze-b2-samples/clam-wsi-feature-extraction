@@ -621,6 +621,22 @@
             ],
             "title": "Source Key"
           },
+          "stage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tiling",
+                  "embedding",
+                  "finalizing"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
           "status": {
             "enum": [
               "pending_upload",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -64,6 +64,16 @@ const ACCEPT = {
   "image/tiff": [".tif", ".tiff"],
 };
 
+// The canonical bundled sample name — used as the pre-filled Label on the
+// golden path so a first-time user can ingest the recommended sample without
+// inventing a name. Matches the "Sample slide (CMU-1-Small-Region)" option.
+const SAMPLE_LABEL = "CMU-1-Small-Region";
+
+// Filename without its extension, e.g. "TCGA-A1.svs" -> "TCGA-A1".
+function labelFromFilename(name: string): string {
+  return name.replace(/\.[^./\\]+$/, "") || name;
+}
+
 export function SlideCreateForm() {
   const router = useRouter();
   const createSlide = useCreateSlide();
@@ -71,12 +81,17 @@ export function SlideCreateForm() {
   const [fileError, setFileError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  // Once the user types in Label, stop auto-deriving it from the source so we
+  // never clobber their name when they switch source or pick a file.
+  const labelEditedRef = useRef(false);
+
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    // Safe defaults surfaced as guidance, not autofilled magic values.
+    // Pre-fill the Label from the default source (the bundled sample) so the
+    // golden path needs no typing; every other default is guidance, not magic.
     defaultValues: {
       source: "sample",
-      label: "",
+      label: SAMPLE_LABEL,
       bag_label: DEFAULT_BAG_LABEL,
       patch_level: String(DEFAULT_PATCH_LEVEL) as "0",
       patch_size: String(DEFAULT_PATCH_SIZE) as "256",
@@ -87,12 +102,21 @@ export function SlideCreateForm() {
 
   const source = form.watch("source");
 
-  const onDrop = useCallback((accepted: File[]) => {
-    if (accepted[0]) {
-      setFile(accepted[0]);
+  const onDrop = useCallback(
+    (accepted: File[]) => {
+      const picked = accepted[0];
+      if (!picked) return;
+      setFile(picked);
       setFileError(null);
-    }
-  }, []);
+      // Derive the label from the uploaded filename unless the user set one.
+      if (!labelEditedRef.current) {
+        form.setValue("label", labelFromFilename(picked.name), {
+          shouldValidate: true,
+        });
+      }
+    },
+    [form]
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -170,7 +194,22 @@ export function SlideCreateForm() {
                   <FormLabel>Slide source</FormLabel>
                   <FormControl>
                     <RadioGroup
-                      onValueChange={field.onChange}
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        // Keep the pre-filled label in sync with the chosen
+                        // source until the user overrides it.
+                        if (!labelEditedRef.current) {
+                          form.setValue(
+                            "label",
+                            value === "sample"
+                              ? SAMPLE_LABEL
+                              : file
+                                ? labelFromFilename(file.name)
+                                : "",
+                            { shouldValidate: true }
+                          );
+                        }
+                      }}
                       value={field.value}
                       className="flex flex-col gap-2"
                     >
@@ -236,11 +275,19 @@ export function SlideCreateForm() {
                 <FormItem>
                   <FormLabel>Label</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g. Breast biopsy — case 001" {...field} />
+                    <Input
+                      placeholder="e.g. Breast biopsy — case 001"
+                      {...field}
+                      onChange={(e) => {
+                        labelEditedRef.current = true;
+                        field.onChange(e);
+                      }}
+                    />
                   </FormControl>
                   <FormDescription>
-                    A human-readable name for this slide. Tip: include the tissue and
-                    case id so it is easy to find later.
+                    A human-readable name for this slide, pre-filled from the source.
+                    Edit it freely — e.g. include the tissue and case id so it is easy
+                    to find later.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

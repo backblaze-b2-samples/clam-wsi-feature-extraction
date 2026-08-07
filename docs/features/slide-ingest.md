@@ -19,7 +19,7 @@ Register a whole-slide image (WSI) on B2 — either the bundled sample slide or 
 
 ## Inputs
 - source: `"sample" | "upload"` (RadioGroup, default sample)
-- label: string (free text)
+- label: string (free text; pre-filled from the source — `CMU-1-Small-Region` for the sample, the uploaded filename stem for an upload — and editable, so the golden path needs no typing)
 - bag_label: string (Select from `MIL_BAG_LABELS`, default `unknown`)
 - patch_level: 0|1|2 (Select), patch_size: 256|512 (Select), encoder: Select
 - filename / content_type / size_bytes: only for `source="upload"`

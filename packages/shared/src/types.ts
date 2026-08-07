@@ -81,6 +81,9 @@ export type SlideStatus =
   | "extracted"
   | "failed";
 export type SlideSource = "sample" | "upload";
+// Coarse in-flight extraction stage, persisted to the manifest so the slide
+// detail view advances through real steps during a run. Null on terminal status.
+export type SlideStage = "tiling" | "embedding" | "finalizing";
 export type PreviewKind = "thumbnail" | "tissue_overlay" | "patch_grid";
 export type AssetName =
   | "thumbnail"
@@ -132,6 +135,7 @@ export interface Slide extends SlideSummary {
   level_count: number | null;
   mpp: number | null;
   extraction: ExtractionResult | null;
+  stage: SlideStage | null;
 }
 
 export interface PresignedUpload {

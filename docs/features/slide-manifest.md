@@ -21,7 +21,7 @@
 - Slide lifecycle events (ingest, register, extract, edit)
 
 ## Outputs
-- `slides/<id>/manifest.json` containing: `id`, `label`, `source`, `status`, `bag_label`, `encoder`, `patch_level`, `patch_size`, timestamps, `source_filename`/`size_bytes`, geometry (`width`/`height`/`level_count`/`mpp`), `notes`, artifact keys (`source_key`, `embeddings_key`, `thumbnail_key`, `tissue_overlay_key`, `patch_grid_key`), `num_patches`, `feature_dim`, and the `extraction` result.
+- `slides/<id>/manifest.json` containing: `id`, `label`, `source`, `status`, `stage` (coarse in-flight extraction stage while `extracting`; null on terminal status), `bag_label`, `encoder`, `patch_level`, `patch_size`, timestamps, `source_filename`/`size_bytes`, geometry (`width`/`height`/`level_count`/`mpp`), `notes`, artifact keys (`source_key`, `embeddings_key`, `thumbnail_key`, `tissue_overlay_key`, `patch_grid_key`), `num_patches`, `feature_dim`, and the `extraction` result.
 
 ## Flow
 - Every write goes through `persist`; the Library lists slides by scanning `slides/*/manifest.json`; the detail view reads one manifest.

@@ -279,10 +279,25 @@ export function useExtractSlide() {
   const qc = useQueryClient();
   return useMutation<Slide, ApiError, string>({
     mutationFn: (id) => extractSlide(id),
+    // The extract POST blocks until the whole run finishes. Optimistically flip
+    // the cached slide to `extracting` so the status badge and `useSlide`'s
+    // `extracting` poll start immediately — otherwise the badge would read
+    // "Registered" and the pane would sit frozen for the entire run. The poll
+    // then advances through the real `stage` the server persists as it works.
+    onMutate: (id) => {
+      qc.setQueryData<Slide>(qk.slide(id), (prev) =>
+        prev ? { ...prev, status: "extracting", stage: "tiling", error: null } : prev
+      );
+    },
     onSuccess: (slide) => {
       qc.setQueryData(qk.slide(slide.id), slide);
       qc.invalidateQueries({ queryKey: qk.slides() });
       qc.invalidateQueries({ queryKey: qk.slideStats() });
+    },
+    // If the request itself fails, drop the optimistic state and refetch the
+    // persisted status (the server may have recorded `failed`).
+    onError: (_e, id) => {
+      qc.invalidateQueries({ queryKey: qk.slide(id) });
     },
   });
 }
