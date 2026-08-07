@@ -7,13 +7,25 @@ Digital pathology is a large-fan-out problem: one 1–4 GB slide explodes into t
 
 ## What it looks like
 
-**Dashboard** — cohort counts and the raw-vs-derived storage fan-out:
+**Dashboard** — cohort counts (slides, extracted, patch fan-out, objects on B2) plus a raw-vs-derived storage fan-out panel and the most recent slides.
 
-![Dashboard with slide/patch counts and a storage fan-out panel](docs/images/dashboard.png)
+![Dashboard with slide and patch counts and a storage fan-out panel](docs/images/dashboard.png)
 
-**Slide detail** — thumbnail, tissue-mask overlay, patch grid, embedding shape, and artifact downloads:
+**Slide Library** — every ingested whole-slide image as a card with its H&E thumbnail, patch count, and extraction status.
 
-![Slide detail with tissue overlay, patch grid, and extraction stats](docs/images/slide-detail.png)
+![Slide Library grid of whole-slide images with thumbnails and status badges](docs/images/slides-library.png)
+
+**Slide detail** — the source thumbnail beside slide metadata, feature-extraction stats (encoder, the `[N, 1024]` embedding bag, tissue fraction), and B2 artifact downloads.
+
+![Slide detail with thumbnail, extraction stats, and artifact downloads](docs/images/slide-detail.png)
+
+**Tissue mask** — the CLAM-style HSV + Otsu tissue segmentation overlaid on the slide, marking the regions that get tiled.
+
+![Slide preview showing the tissue-segmentation mask overlay](docs/images/tissue-mask.png)
+
+**Patch grid** — the patch tiling laid over tissue, one square per patch that the truncated-ResNet50 encoder embeds into the feature bag.
+
+![Slide preview showing the patch-tiling grid overlay](docs/images/patch-grid.png)
 
 ## Quick Start
 
