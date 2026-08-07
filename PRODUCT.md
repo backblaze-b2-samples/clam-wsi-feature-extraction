@@ -6,20 +6,22 @@ product
 
 ## Users
 
-AI coding agents and "vibe coders" (developers who lean on AI to move fast) who clone
-this kit as the foundation for a new full-stack app. Their context: they want to skip
-the boilerplate loop (dashboard, upload, file browser, cloud storage wiring) and go
-straight to building their app's unique features. They read the repo, keep the shared
-scaffolding, and rebrand + rewrite the dashboard for their own use case.
+Digital-pathology labs and weakly-supervised MIL researchers who need a runnable,
+cloud-native reference for whole-slide-image (WSI) feature extraction — plus the AI
+coding agents and "vibe coders" who adapt it. They want raw slides, extracted patches,
+and embedding tensors to live in cheap object storage (not on a local filesystem), with
+a working tile → tissue-segment → embed pipeline they can point at their own cohort.
 
 ## Product Purpose
 
-An engineering-grade full-stack starter kit (Next.js 16 + React 19 + Tailwind v4 +
-shadcn/ui frontend, FastAPI backend) with Backblaze B2 cloud storage integrated out of
-the box. It ships a dashboard, drag-and-drop upload, and a file browser so builders
-start from a working app, not a blank page. Success = a builder can clone it, run it,
-rebrand it via one config file, and trust every screen enough to build on top without
-first fixing it.
+A computational-pathology sample (Next.js 16 + React 19 frontend, FastAPI backend) that
+makes Backblaze B2 the storage layer for a CLAM-style WSI feature-extraction pipeline.
+OpenSlide reads gigapixel slides, tissue is segmented on a downsampled thumbnail, a
+patch grid is tiled over tissue, and a truncated ResNet50 produces a per-slide 1024-d
+embedding bag — with raw slides, patches, and feature tensors all stored on B2 through
+the S3-compatible API. Success = a user can ingest a slide, run extraction on CPU with
+no second API key, and get a training-ready embedding bag on B2. Built on the B2
+vibe-coding starter kit, so the UI kit, File Explorer, and Upload surfaces come for free.
 
 ## Maturity and Support Boundary
 

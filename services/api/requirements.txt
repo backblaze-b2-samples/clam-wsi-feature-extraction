@@ -9,8 +9,22 @@ python-dotenv>=1.0.0
 pydantic>=2.10.0
 pydantic-settings>=2.7.0
 boto3>=1.35.0
-Pillow>=11.0.0
+Pillow>=11.0.0,<13.0.0
 PyPDF2>=3.0.0
+
+# --- WSI feature-extraction pipeline (local ML; imported lazily at runtime) ---
+# Upper bounds are load-bearing: unbounded torch/torchvision boot green but
+# break the marquee extraction on a clean install. Keep in sync with
+# requirements.lock. openslide-bin bundles the native OpenSlide C library
+# (macOS arm64 + Linux wheels), so `pnpm run setup` needs no `brew install
+# openslide` / `apt-get install openslide-tools` — those remain a documented
+# fallback (see README).
+torch>=2.4.0,<2.9.0
+torchvision>=0.19.0,<0.24.0
+openslide-bin>=4.0.0
+openslide-python>=1.4.1,<2.0.0
+scikit-image>=0.24.0,<0.26.0
+numpy>=1.26.0,<2.0.0
 
 # Dev / quality
 ruff>=0.8.0

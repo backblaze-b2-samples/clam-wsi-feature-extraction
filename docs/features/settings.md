@@ -76,6 +76,23 @@ views plus a switcher) and drop the "Demo field" wording in the same change.
 - Full local verify command: `pnpm verify:full` when the E2E/live prerequisites in [Dev Workflows](../dev-workflows.md#commands) are available
 - Pass criteria: focused tests and `pnpm verify` green; saving theme = dark leaves `html.class="dark"` and survives a reload; the demo banner is present and every demo field is labelled as such
 
+## WSI pipeline configuration (server-side env, not the UI)
+
+The feature-extraction pipeline is configured through environment variables in
+`.env`, not through this demo Settings page. These are read by the API at
+startup / per run (see `services/api/app/config/settings.py`):
+
+- `EXTRACT_DEVICE` — inference device: `auto` (CUDA → Apple MPS → CPU) or force
+  `cpu`/`cuda`/`mps`. Auto-detect never hard-requires a GPU; CPU is the default.
+- `MIL_BAG_LABELS` — comma-separated finite set offered in the Ingest/Edit bag-label
+  Select (default `tumor,normal,unknown`).
+- `EXTRACT_MODEL_CACHE_DIR` — where torchvision caches the ResNet50 weights
+  (default `services/api/.torch_cache`, gitignored).
+- `SAMPLE_SLIDE_URL` — the freely-redistributable test slide used by the "sample
+  slide" ingest option (default `CMU-1-Small-Region.svs`).
+
+See [Feature Extraction](feature-extraction.md) and [MIL Bag Labels](mil-bag-labels.md).
+
 ## Related Docs
 - [App Workflows](../app-workflows.md)
 - [ARCHITECTURE.md](../../ARCHITECTURE.md)

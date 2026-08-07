@@ -1,62 +1,56 @@
-<!-- last_verified: 2026-07-28 -->
+<!-- last_verified: 2026-08-07 -->
 # Feature: Dashboard
 
 ## Purpose
-Provide an at-a-glance overview of file storage usage and recent upload activity.
+Give an at-a-glance overview of the WSI cohort and its derived-artifact fan-out on B2 — how many slides, how many extracted, how many patches, and how raw storage compares to derived storage.
 
 ## Used By
 - UI: `/` page (dashboard home)
-- API: `GET /files/stats`, `GET /files`, `GET /files/stats/activity`
+- API: `GET /slides/stats`, `GET /slides`
 
 ## Core Functions
-- `apps/web/src/components/dashboard/stats-cards.tsx` — 4 stat cards, plus the on-screen loading notice while the bucket scan runs
-- `apps/web/src/components/dashboard/recent-uploads-table.tsx` — last 10 uploads
-- `apps/web/src/components/dashboard/upload-chart.tsx` — bar chart of uploads per day
-- `apps/web/src/lib/api-client.ts` — `getFileStats()`, `getFiles()`, `getUploadActivity()`
-- `services/api/app/runtime/files.py` — `GET /files/stats` handler
-- `services/api/app/service/files.py` — `get_stats()` business logic
-- `services/api/app/repo/b2_client.py` — `get_upload_stats()` data access
-- `services/api/app/repo/list_cache.py` — the shared bucket listing both `/files/stats` and `/files` read, so the dashboard and the file browser never scan twice
-- `apps/web/src/components/common/loading-notice.tsx` — visible, escalating wait copy
+- `apps/web/src/components/dashboard/stats-cards.tsx` — 4 cohort stat cards (Slides, Extracted, Patches, Objects on B2)
+- `apps/web/src/components/dashboard/cohort-fanout.tsx` — raw-vs-derived storage bars (the fan-out story)
+- `apps/web/src/components/dashboard/recent-slides.tsx` — the 8 most recent slides
+- `apps/web/src/lib/queries.ts` — `useSlideStats()`, `useSlides()`
+- `services/api/app/runtime/slides.py` — `GET /slides/stats` handler
+- `services/api/app/service/slides.py` — `get_slide_stats()` aggregation over the `slides/` prefix
 
 ## Canonical Files
-- Dashboard page layout: `apps/web/src/components/dashboard/stats-cards.tsx`
-- Stats service logic: `services/api/app/service/files.py`
+- Dashboard layout: `apps/web/src/app/page.tsx`
+- Stats service logic: `services/api/app/service/slides.py` (`get_slide_stats`)
 
 ## Inputs
 - None (dashboard loads data automatically)
 
 ## Outputs
-- `GET /files/stats` → `UploadStats` (total_files, total_size_bytes, total_size_human, uploads_today, total_downloads)
-- `GET /files` (limit 10) → `FileMetadata[]` for recent uploads table (sorted newest-first)
-- `GET /files/stats/activity?days=7` → `DailyUploadCount[]` for chart (server-side aggregation)
+- `GET /slides/stats` → `SlideStats` (total_slides, extracted_slides, source_bytes, total_patches, patch_bytes, embedding_bytes, total_objects, total_size_bytes + human strings)
+- `GET /slides` → `SlideSummary[]` for the recent-slides table (newest first; polls while any slide is `extracting`)
 
 ## Flow
-- Page loads → three parallel API calls (stats, recent files, upload activity), all served from one cached bucket listing
-- Stats needed ~8.3s to replace the skeletons on a 16k-object bucket, so: the API warms that listing at startup and serves it stale-while-revalidate (only the very first scan after boot can block), and the cards state the wait in words while it runs instead of showing four silent placeholders
-- Stats cards display total files, storage used, uploads today, total downloads
-- Upload chart displays server-aggregated daily counts for last 7 days as bar chart after activity data is known
-- Recent uploads table shows last 10 files with filename, size, type, date, status badge. Each filename is a link to `/files?preview=<key>`, which opens that file's preview in the browser — the rows used to be inert text with no role, tabindex or handler, so the "click a file to preview it" gesture `/files` teaches did nothing here
+- Page loads → two queries (slide stats + slide list).
+- Stat cards show cohort counts; the fan-out panel splits `source_bytes` (raw WSIs) from derived bytes (patches + embeddings), making write-amplification visible.
+- The recent-slides table lists the newest slides with patch count and status badge, each linking to its detail page.
 
 ## Edge Cases
-- API unavailable → error states with retry where supported; activity chart does not show a false zero state while loading
-- No files uploaded → empty chart message, empty table message
-- Large file count → stats endpoint paginates through all objects using `ContinuationToken`; the result is cached, so the cost is paid once (at startup) rather than per page view
-- Bucket changed by something other than this app → numbers can lag by up to `LIST_CACHE_TTL_SECONDS` (default 300s). The app's own uploads/deletes invalidate the cache, so they are never stale
+- API unavailable → inline error state with retry (never a false zero).
+- No slides → empty states on the cards, fan-out panel, and table.
+- Stats read the `slides/` prefix live, so a just-finished extraction is reflected immediately.
 
 ## UX States
-- Loading: an on-screen "Loading bucket stats…" notice above the cards (escalating at 4s and 12s), with skeleton placeholders for cards, table, and upload activity chart
-- Empty: "No files uploaded yet" / "No upload data available yet"
-- Loaded: populated cards, chart, table
+- Loading: skeletons on cards, fan-out bars, and table.
+- Empty: "No slides yet" prompts to ingest.
+- Loaded: populated cohort cards, fan-out bars, recent-slides table.
 
 ## Verification
-- Test files: `services/api/tests/test_upload_activity.py`, `services/api/tests/test_recent_files.py`, `services/api/tests/test_list_cache.py`, `apps/web/src/lib/loading-progress.test.ts`
-- Required cases: stats with files, stats with empty bucket, API error fallback, cached listing reused across stats and listing calls, loading copy escalating at its thresholds
+- Test files: `services/api/tests/test_slides.py` (`test_get_slide_stats_aggregates_fanout`), `apps/web/src/lib/queries.test.ts`
+- Required cases: stats aggregation (source/patch/embedding byte tallies), empty cohort, API error fallback
 - Focused verify command: `pnpm test:api`
 - Default pre-PR verify command: `pnpm verify`
 - Full local verify command: `pnpm verify:full` when the E2E/live prerequisites in [Dev Workflows](../dev-workflows.md#commands) are available
-- Pass criteria: focused tests and `pnpm verify` green; explain any skipped `pnpm verify:full` prerequisites
+- Pass criteria: focused tests and `pnpm verify` green.
 
 ## Related Docs
+- [Derived Fan-out](derived-fanout.md)
 - [ARCHITECTURE.md](../../ARCHITECTURE.md)
 - [App Workflows](../app-workflows.md)

@@ -17,6 +17,10 @@ __pycache__/
 venv/
 env/
 
+# Torchvision encoder weights cache (ResNet50, ~100 MB downloaded once)
+.torch_cache/
+services/api/.torch_cache/
+
 # Environment
 # Real env files are never tracked; example/template files always are.
 # Negations must stay after the ignore patterns above them to take effect.

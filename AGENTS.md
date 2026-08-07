@@ -20,22 +20,34 @@ infra/railway/     Deployment config
 infra/vercel/      Vercel deployment contract
 ```
 
-## 2. Building on This Starter Kit
+## 2. This Sample + the Starter Contract
 
-When this repo is used as the foundation for a new app, the following pieces are part of the starter contract — keep them. Adapt only what the new use case actually requires.
+This repo is **CLAM WSI Feature Extraction** — a computational-pathology pipeline
+built on the B2 vibe-coding starter kit. It adds a **Slide** domain (ingest →
+tissue-segment + tile → CNN-embed → review) on top of the kept starter spine. The
+domain code lives in `types/slides.py`, `service/slides.py`, `service/tiling.py`
+(OpenSlide + tissue seg, heavy imports LAZY), `service/features.py` (truncated
+ResNet50, torch LAZY), `service/extraction.py` (the run pipeline),
+`service/rendering.py`, `runtime/slides.py`, and
+`apps/web/src/components/slides/` + `apps/web/src/app/slides/`.
+
+**Data stance.** This demo is **single-tenant and unauthenticated**. Deletes are
+scoped to one slide's prefix (`slides/<id>/`), but there is no per-user isolation —
+do NOT point it at sensitive clinical data without adding auth + per-tenant
+scoping (see docs/SECURITY.md). WSIs may carry PHI in slide labels/metadata.
 
 **Keep as-is (do not strip, rename, or replace)**
 - **UI kit / design system.** `apps/web/src/components/ui/` (shadcn primitives), the design tokens in `apps/web/src/app/globals.css`, and the `/design` reference page. Build new screens with these primitives; never edit the generated `components/ui/` files directly. Restyling happens through tokens in `globals.css`.
-- **File Explorer.** `/files` route, `apps/web/src/app/files/`, and `apps/web/src/components/files/`. The Files sidebar entry in `apps/web/src/components/layout/app-sidebar.tsx` stays.
-- **Upload.** `/upload` route, `apps/web/src/app/upload/`, and `apps/web/src/components/upload/`. The Upload sidebar entry stays.
-- The sidebar nav itself (Dashboard, Upload, Files, Settings, plus the Design System utility link).
+- **File Explorer.** `/files` route, `apps/web/src/app/files/`, and `apps/web/src/components/files/`. This is the full-bucket browser; the Files sidebar entry stays. It is distinct from the slides-scoped Library at `/slides`.
+- **Upload.** `/upload` route, `apps/web/src/app/upload/`, and `apps/web/src/components/upload/` (the generic presigned-PUT upload path + tests) are retained. The `/upload` page stays reachable from Files and the command palette.
+- The sidebar nav (Dashboard, Slides, Ingest, Files, Upload, Settings, plus the Design System utility link).
 
-**Adapt to the new use case**
-- **Dashboard.** `/` route and `apps/web/src/components/dashboard/` (stats cards, upload chart, recent uploads table) are illustrative defaults. Replace them with metrics, charts, and tables that reflect what the new app actually does (e.g. transcripts processed, embeddings indexed, classifications run). New aggregations must flow through the same `runtime -> service -> repo` layering and be exposed via TanStack Query hooks in `apps/web/src/lib/queries.ts` — no bare `useEffect + fetch`.
+**Adapt to the use case**
+- **Dashboard.** `/` route and `apps/web/src/components/dashboard/` are restated here around cohort metrics (slides, extracted count, total patches, objects on B2) and the raw-vs-derived storage fan-out. New aggregations flow through the same `runtime -> service -> repo` layering and TanStack Query hooks in `apps/web/src/lib/queries.ts` — no bare `useEffect + fetch`.
 - Update `docs/features/dashboard.md` in the same PR as any dashboard change (see §9).
 
 **Why this contract exists**
-- The UI kit, Files, and Upload pages are the reusable B2-backed scaffolding that makes this a starter kit — stripping them defeats the purpose. The dashboard is the only screen explicitly designed to be rewritten per app.
+- The UI kit, Files, and Upload pages are the reusable B2-backed scaffolding that makes this a starter kit — stripping them defeats the purpose. The dashboard is the screen designed to be rewritten per app.
 
 ## 3. Architectural Invariants
 

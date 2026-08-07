@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import {
   LayoutDashboard,
+  Layers,
+  Microscope,
   Upload,
   FolderOpen,
   Settings,
@@ -37,8 +39,10 @@ interface CommandPaletteProps {
 
 const routes = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Upload", href: "/upload", icon: Upload },
+  { label: "Slides", href: "/slides", icon: Layers },
+  { label: "Ingest", href: "/slides/new", icon: Microscope },
   { label: "Files", href: "/files", icon: FolderOpen },
+  { label: "Upload", href: "/upload", icon: Upload },
   { label: "Settings", href: "/settings", icon: Settings },
   { label: "Design System", href: "/design", icon: Sparkles },
 ];

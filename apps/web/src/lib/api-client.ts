@@ -4,8 +4,12 @@ import type {
   FileMetadataDetail,
   FileUploadResponse,
   PresignUploadResponse,
+  Slide,
+  SlideCreated,
+  SlideStats,
+  SlideSummary,
   UploadStats,
-} from "@vibe-coding-starter-kit/shared";
+} from "@clam-wsi-feature-extraction/shared";
 
 // Single-origin deploys (Vercel `services`: one project serving web + API) put
 // the API under /api on the same origin, so no NEXT_PUBLIC_API_URL is needed —
@@ -17,12 +21,21 @@ export const API_BASE =
   (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:8000");
 
 type ApiClientRoute = {
-  method: "delete" | "get" | "post";
+  method: "delete" | "get" | "patch" | "post";
   path: string;
 };
 
 export const API_CLIENT_ROUTES = {
   health: { method: "get", path: "/health" },
+  slides: { method: "get", path: "/slides" },
+  createSlide: { method: "post", path: "/slides" },
+  slideStats: { method: "get", path: "/slides/stats" },
+  slide: { method: "get", path: "/slides/{slide_id}" },
+  updateSlide: { method: "patch", path: "/slides/{slide_id}" },
+  deleteSlide: { method: "delete", path: "/slides/{slide_id}" },
+  registerSlide: { method: "post", path: "/slides/{slide_id}/register" },
+  extractSlide: { method: "post", path: "/slides/{slide_id}/extract" },
+  slideAsset: { method: "get", path: "/slides/{slide_id}/asset/{name}" },
   files: { method: "get", path: "/files" },
   fileStats: { method: "get", path: "/files/stats" },
   uploadActivity: { method: "get", path: "/files/stats/activity" },
@@ -242,6 +255,113 @@ export async function deleteFile(key: string) {
       method: API_CLIENT_ROUTES.fileByKeyDelete.method.toUpperCase(),
     }
   );
+}
+
+// --- Slides ----------------------------------------------------------------
+
+function slidePath(template: string, id: string): string {
+  return template.replace("{slide_id}", encodeURIComponent(id));
+}
+
+export async function getSlides() {
+  return apiFetch<SlideSummary[]>(API_CLIENT_ROUTES.slides.path);
+}
+
+export async function getSlideStats() {
+  return apiFetch<SlideStats>(API_CLIENT_ROUTES.slideStats.path);
+}
+
+export async function getSlide(id: string) {
+  return apiFetch<Slide>(slidePath(API_CLIENT_ROUTES.slide.path, id));
+}
+
+export interface CreateSlideInput {
+  source: "sample" | "upload";
+  label: string;
+  bag_label: string;
+  patch_level: number;
+  patch_size: number;
+  encoder: string;
+  notes?: string;
+  filename?: string;
+  content_type?: string;
+  size_bytes?: number;
+}
+
+export async function createSlide(input: CreateSlideInput) {
+  return apiFetch<SlideCreated>(API_CLIENT_ROUTES.createSlide.path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function registerSlide(id: string) {
+  return apiFetch<Slide>(slidePath(API_CLIENT_ROUTES.registerSlide.path, id), {
+    method: "POST",
+  });
+}
+
+export async function updateSlide(
+  id: string,
+  body: { label?: string; bag_label?: string; notes?: string }
+) {
+  return apiFetch<Slide>(slidePath(API_CLIENT_ROUTES.updateSlide.path, id), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteSlide(id: string) {
+  return apiFetch<{ deleted: boolean; id: string }>(
+    slidePath(API_CLIENT_ROUTES.deleteSlide.path, id),
+    { method: "DELETE" }
+  );
+}
+
+export async function extractSlide(id: string) {
+  return apiFetch<Slide>(slidePath(API_CLIENT_ROUTES.extractSlide.path, id), {
+    method: "POST",
+  });
+}
+
+/** Presigned URL (inline preview or attachment download) for a slide asset. */
+export async function getSlideAssetUrl(id: string, name: string) {
+  const path = API_CLIENT_ROUTES.slideAsset.path
+    .replace("{slide_id}", encodeURIComponent(id))
+    .replace("{name}", encodeURIComponent(name));
+  return apiFetch<{ url: string }>(path);
+}
+
+/** PUT a slide's raw bytes straight to the presigned B2 URL (own-WSI upload). */
+export function putSlideToStorage(
+  presign: PresignUploadResponse,
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    });
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new ApiError(`Upload to storage failed (${xhr.status})`, xhr.status));
+      }
+    });
+    xhr.addEventListener("error", () => reject(networkError()));
+    xhr.addEventListener("abort", () => reject(new ApiError("Upload aborted", 0)));
+    xhr.open(presign.method.toUpperCase(), presign.url);
+    for (const [name, value] of Object.entries(presign.headers)) {
+      xhr.setRequestHeader(name, value);
+    }
+    xhr.send(file);
+  });
 }
 
 /**

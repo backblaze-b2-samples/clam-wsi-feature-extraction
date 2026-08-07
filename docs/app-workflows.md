@@ -1,53 +1,65 @@
-<!-- last_verified: 2026-08-06 -->
+<!-- last_verified: 2026-08-07 -->
 # App Workflows
 
-User journeys inside the application.
+User journeys inside the application. The primary flow is the **Slide** lifecycle;
+the generic Upload and File Explorer are the kept starter surfaces.
 
-## Upload Files
+## Ingest a Slide
 
-- User navigates to `/upload`
-- Drops or selects files in the dropzone
-- Client validates file size (max 100MB) and type
-- Files upload **directly from the browser to B2** (a presigned PUT). A determinate progress bar tracks the bytes leaving the browser; once they are all sent the row switches to "Verifying upload..." with an *indeterminate* sweeping bar while the API HEADs and magic-byte-sniffs the stored object. That phase has no percentage to report, and a bar parked at a full 100% read as finished-but-stuck
-- On success: toast notification, green checkmark, and a "View in Files" link through to the browser
-- On failure: red status icon with error message
-- User can clear completed uploads
-- The queue lives in an app-wide provider: navigating to another page keeps the upload running, shows an "Uploading N files" indicator in the header, and keeps the duplicate-upload guard armed
-- Reloading or closing mid-upload asks for confirmation first; if the upload dies anyway, the next load says which file didn't finish
-- See: [File Upload](features/file-upload.md)
+- User navigates to `/slides/new`
+- Chooses a **Slide source** (RadioGroup): **Sample slide (CMU-1-Small-Region)** (default) or **Upload my own WSI**
+- Sets finite options via Selects: **MIL bag label** (default `unknown`), **patch level** (default 0), **patch size** (default 256), **feature encoder** (ResNet50 truncated). Label and notes are free text
+- **Sample**: submitting fetches the ~1.9 MB test slide server-side, lands it under `slides/<id>/source/`, renders a thumbnail, and navigates to the slide — status `registered`
+- **Upload**: submitting mints a presigned PUT; the browser streams the slide **directly to B2** (a multi-GB slide never passes through the API), then the app finalizes with a register call — status `registered`
+- Safe defaults are surfaced as guidance text (no autofill button)
+- See: [Slide Ingest](features/slide-ingest.md)
 
-## Browse and Manage Files
+## Run Feature Extraction
 
-- User navigates to `/files`
-- Page loads the 100 most recent objects from the API (sorted most recent first). While it loads, the page says so on screen and escalates the wording if the wait runs long — a full bucket listing measured 2.8s-21s cold
-- If that limit was hit, a notice states how many objects the bucket actually holds — the page never claims to show everything
-- Files displayed in tree view with folders and type-specific icons
-- Folders auto-expand on load until the *majority* of the listed files are reachable without clicking, so the page's own "click a file" instruction is always actionable. Stopping at the first visible file was not enough: one stray top-level object left the other 99 sealed in collapsed folders while the page claimed to show 100
-- Clicking a file row opens its preview; the per-row actions menu (preview / download / delete) is always visible, on every viewport
-- Arriving at `/files?preview=<key>` expands that file's folders and opens its preview directly. This is how the ⌘K palette and the dashboard's recent-uploads rows hand off a *specific* file; the param is consumed on arrival so it doesn't re-fire later
-- **Preview**: opens dialog with image/PDF preview + metadata panel, and the file's Download / Delete actions — the advertised "click a file" path offers everything the row menu does. The loading state holds until the media paints; a failure offers "Open in a new tab". The preview URL is signed with `Content-Disposition: inline` so PDFs render in place
-- **Download**: shows a pending state on the row plus a toast while the presigned URL is fetched, then starts the download via an anchor click (which, unlike a popup, still works if the click's user activation expired during a slow presign). Failures are reported; the click can never silently do nothing
-- **Delete**: the confirmation dialog stays open showing "Deleting..." until the request settles, then the row disappears with the toast (optimistic cache update) and the list reconciles with the server. The dialog is held deliberately — Radix closes on action click by default, which dismissed the only pending state and left the row looking untouched while the delete was still in flight
-- Empty bucket shows "No files found" with upload prompt
-- See: [File Browser](features/file-browser.md)
+- On `/slides/[id]`, the user clicks **Run extraction**
+- OpenSlide opens the slide, tissue is segmented, a patch grid is tiled and each patch is written to B2, the truncated ResNet50 embeds every patch, and a `[N_patches, 1024]` `embeddings.pt` + previews + manifest are written back
+- Status flows `registered → extracting → extracted` (or `failed`); the page polls and updates itself
+- The extraction stats card shows the device (auto-detected), patch count, embedding-bag shape, and tissue fraction
+- See: [Feature Extraction](features/feature-extraction.md)
+
+## Browse the Slide Library
+
+- User navigates to `/slides` — a grid of slide cards (thumbnail, bag label, patch count, status), scoped to the `slides/` prefix
+- Opening a card shows the detail view: preview tabs (thumbnail / tissue mask / patch grid), details, extraction stats, and downloadable artifacts (embedding bag, manifest)
+- This Library is distinct from the full-bucket File Explorer at `/files`
+- See: [Slide Manifest](features/slide-manifest.md)
+
+## Edit or Delete a Slide
+
+- **Edit** (`/slides/[id]/edit`): the form opens pre-filled from the manifest; the user updates the label, MIL bag label, or notes, and the change is written back into `manifest.json`
+- **Delete**: a confirmation dialog deletes the slide and every derived artifact, scoped strictly to `slides/<id>/` — never bucket-wide
+- See: [MIL Bag Labels](features/mil-bag-labels.md)
 
 ## View Dashboard
 
 - User navigates to `/` (home)
-- Three parallel API calls load: stats, recent files, upload activity — all served from one shared bucket listing that the API warms at startup
-- While stats load, the page states it in words above the cards rather than showing silent skeletons
-- Stats cards show: total files, storage used, uploads today, total downloads
-- Upload chart shows last 7 days of upload activity as bar chart
-- Recent uploads table shows last 10 files with filename, size, type, date. Each filename links to that file's preview on `/files` — `/files` teaches "click a file to preview it", so the same gesture here has to answer rather than being inert text
-- Empty state: "No files uploaded yet" messages
+- Cohort stat cards show slides, extracted count, total patches, and objects on B2
+- The storage fan-out panel splits raw WSI bytes from derived (patch + embedding) bytes — the write-amplification story
+- The recent-slides table links each slide to its detail page
 - See: [Dashboard](features/dashboard.md)
+
+## Upload Files (kept starter surface)
+
+- User navigates to `/upload`, drops or selects files
+- Files upload **directly from the browser to B2** via a presigned PUT; a determinate bar tracks the bytes, then an indeterminate "Verifying upload..." phase while the API HEADs and magic-byte-sniffs the stored object
+- On success: toast + "View in Files"; the queue survives navigation
+- This generic path is retained from the starter for arbitrary files; slides use the Ingest flow above
+- See: [File Browser](features/file-browser.md)
+
+## Browse and Manage Files (kept starter surface)
+
+- User navigates to `/files` — the full-bucket tree view (every object, including `slides/<id>/…`)
+- Click a file row to preview; the per-row actions menu (preview / download / delete) is always visible
+- Arriving at `/files?preview=<key>` expands that file's folders and opens its preview
+- See: [File Browser](features/file-browser.md)
 
 ## Change Preferences
 
 - User navigates to `/settings`
-- A banner at the top states that the page is mostly a demonstration: only Theme is wired up for real, the rest showcases what a settings page can look like when you adapt the kit
-- **Theme** (real): editing it and saving applies it immediately and persists it (`next-themes`), and the header's theme toggle drives the same state
-- **Profile and preference fields** (demo): Display name, Bio, Default file view (Tree/List/Grid), Email me on every upload, Warn me when approaching quota + threshold. Each is labelled "Demo field", persists to `localStorage` only, and drives no behaviour — there is no account system, mailer, quota banner, activity log, or List/Grid view behind them yet
-- Saving reports honestly: a success toast that separates the real theme change from the locally-stored demo values, or a warning toast if the browser blocked storage (theme still changes). It never claims a save that did not happen — the original page toasted "Settings saved" for fields that changed nothing
-- Danger Zone actions are a demo — no real delete runs
-- See: [Settings](features/settings.md)
+- A banner states the page is mostly a demonstration: only **Theme** is wired up for real; the profile/notification/quota fields persist to `localStorage` only
+- The WSI pipeline itself is configured via server-side env (`EXTRACT_DEVICE`, `MIL_BAG_LABELS`, …), not this page — see [Settings](features/settings.md)

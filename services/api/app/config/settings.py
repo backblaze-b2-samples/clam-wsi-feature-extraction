@@ -2,11 +2,18 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    b2_endpoint: str = "https://s3.us-west-004.backblazeb2.com"
-    b2_key_id: str = ""
+    # Standard B2 env var names (see docs/SECURITY.md). The S3 endpoint is
+    # derived from the region rather than configured directly, so a clone only
+    # needs the four B2_* credentials plus the region. No region is hardcoded in
+    # source: B2_REGION is required (validated at startup in main.py) and its
+    # value is supplied by .env (see .env.example, which ships us-west-004).
+    b2_region: str = ""
+    b2_application_key_id: str = ""
     b2_application_key: str = ""
     b2_bucket_name: str = ""
-    b2_public_url: str = ""
+    # Optional. Only used to build public object URLs for public buckets; the
+    # app runs without it.
+    b2_public_url_base: str = ""
 
     api_port: int = 8000
     # Interactive API docs (/docs, /redoc, /openapi.json). On by default for
@@ -23,8 +30,11 @@ class Settings(BaseSettings):
     # listing each one. NEVER ship this to production.
     api_cors_origin_regex: str = ""
 
-    # Upload limits
-    max_file_size: int = 100 * 1024 * 1024  # 100MB
+    # Upload limits. Whole-slide images are large (Aperio .svs / TIFF routinely
+    # run 1-4 GB), so the ceiling is generous. Uploads go browser-direct to B2
+    # via a presigned PUT, so a big slide never buffers through the API; for
+    # slides beyond this size use S3 multipart (see docs/features/slide-ingest.md).
+    max_file_size: int = 5 * 1024 * 1024 * 1024  # 5 GB
     # TTL for the presigned PUT the browser uploads directly to B2 with. Long
     # enough for a big file on a slow link, short enough that a leaked URL is a
     # narrow, single-key, single-size window.
@@ -69,7 +79,35 @@ class Settings(BaseSettings):
     # normal user action into an API restart that drops in-flight requests.
     download_count_file: str = ".data/download_count.json"
 
+    # --- WSI feature-extraction pipeline (see docs/features/feature-extraction.md) ---
+    # Inference device: auto (CUDA -> Apple MPS -> CPU), or force cpu/cuda/mps.
+    # Auto-detect never hard-requires a GPU; CPU is the safe default.
+    extract_device: str = "auto"
+    # Finite, selectable MIL bag labels for the weakly-supervised workflow. The
+    # create/edit forms render these as a Select (never free text).
+    mil_bag_labels: str = "tumor,normal,unknown"
+    # Where torchvision caches the ResNet50 encoder weights (~100 MB, downloaded
+    # once). Empty -> torchvision's default (services/api/.torch_cache, gitignored).
+    extract_model_cache_dir: str = ""
+    # Freely-redistributable ~1.9 MB Aperio test slide used by the "sample slide"
+    # ingest option so the demo tiles + extracts in seconds on CPU.
+    sample_slide_url: str = (
+        "https://openslide.cs.cmu.edu/download/openslide-testdata/"
+        "Aperio/CMU-1-Small-Region.svs"
+    )
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+    @property
+    def b2_endpoint(self) -> str:
+        # B2's S3-compatible endpoint is fully determined by the region, so it is
+        # derived here rather than stored — no hardcoded region lives in the
+        # source, and a clone configures only B2_REGION.
+        return f"https://s3.{self.b2_region}.backblazeb2.com"
+
+    @property
+    def bag_label_options(self) -> list[str]:
+        return [label.strip() for label in self.mil_bag_labels.split(",") if label.strip()]
 
     @property
     def cors_origins(self) -> list[str]:

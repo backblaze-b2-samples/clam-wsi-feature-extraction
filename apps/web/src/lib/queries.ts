@@ -8,19 +8,32 @@ import {
 } from "@tanstack/react-query";
 import {
   ApiError,
+  createSlide,
   deleteFile,
+  deleteSlide,
+  extractSlide,
   getDownloadUrl,
   getFileDetail,
   getFiles,
   getFileStats,
   getHealth,
   getPreviewUrl,
+  getSlide,
+  getSlideAssetUrl,
+  getSlides,
+  getSlideStats,
   getUploadActivity,
+  updateSlide,
+  type CreateSlideInput,
 } from "@/lib/api-client";
 import type {
   FileMetadata,
   FileMetadataDetail,
-} from "@vibe-coding-starter-kit/shared";
+  Slide,
+  SlideCreated,
+  SlideStats,
+  SlideSummary,
+} from "@clam-wsi-feature-extraction/shared";
 
 // Single source of truth for query keys. Keep these tightly scoped so that
 // invalidating "files" doesn't blow away unrelated caches, and so an IDE
@@ -35,6 +48,11 @@ export const qk = {
   preview: (key: string) => [...qk.all, "preview", key] as const,
   detail: (key: string) => [...qk.all, "detail", key] as const,
   health: () => [...qk.all, "health"] as const,
+  slides: () => [...qk.all, "slides"] as const,
+  slide: (id: string) => [...qk.all, "slide", id] as const,
+  slideStats: () => [...qk.all, "slide-stats"] as const,
+  slideAsset: (id: string, name: string) =>
+    [...qk.all, "slide-asset", id, name] as const,
 };
 
 export type Health = Awaited<ReturnType<typeof getHealth>>;
@@ -166,6 +184,105 @@ export function useDeleteFile() {
       // activity) against the server in the background.
       dropDeletedFileFromCache(qc, fileKey);
       qc.invalidateQueries({ queryKey: qk.all });
+    },
+  });
+}
+
+// --- Slides ----------------------------------------------------------------
+
+// Poll while any slide is mid-pipeline so the Library reflects a run started
+// elsewhere (or from the detail page) without a manual refresh.
+export function useSlides() {
+  return useQuery<SlideSummary[], ApiError>({
+    queryKey: qk.slides(),
+    queryFn: getSlides,
+    refetchInterval: (query) =>
+      query.state.data?.some((s) => s.status === "extracting") ? 4000 : false,
+  });
+}
+
+// One slide. Polls while it is `extracting` so the detail view flips to
+// `extracted`/`failed` on its own when the run finishes.
+export function useSlide(id: string | undefined, { enabled = true }: QueryGate = {}) {
+  return useQuery<Slide, ApiError>({
+    queryKey: qk.slide(id ?? ""),
+    queryFn: () => getSlide(id as string),
+    enabled: enabled && !!id,
+    refetchInterval: (query) =>
+      query.state.data?.status === "extracting" ? 3000 : false,
+  });
+}
+
+export function useSlideStats({ enabled = true }: QueryGate = {}) {
+  return useQuery<SlideStats, ApiError>({
+    queryKey: qk.slideStats(),
+    queryFn: getSlideStats,
+    enabled,
+  });
+}
+
+// Presigned inline URL for one slide preview PNG, keyed by (id, name).
+export function useSlideAssetUrl(
+  id: string,
+  name: string,
+  { enabled = true }: QueryGate = {}
+) {
+  return useQuery<{ url: string }, ApiError>({
+    queryKey: qk.slideAsset(id, name),
+    queryFn: () => getSlideAssetUrl(id, name),
+    enabled: enabled && !!id && !!name,
+    staleTime: 4 * 60_000,
+  });
+}
+
+export function useCreateSlide() {
+  const qc = useQueryClient();
+  return useMutation<SlideCreated, ApiError, CreateSlideInput>({
+    mutationFn: createSlide,
+    onSuccess: ({ slide }) => {
+      qc.setQueryData(qk.slide(slide.id), slide);
+      qc.invalidateQueries({ queryKey: qk.slides() });
+      qc.invalidateQueries({ queryKey: qk.slideStats() });
+    },
+  });
+}
+
+export function useUpdateSlide() {
+  const qc = useQueryClient();
+  return useMutation<
+    Slide,
+    ApiError,
+    { id: string; label?: string; bag_label?: string; notes?: string }
+  >({
+    mutationFn: ({ id, label, bag_label, notes }) =>
+      updateSlide(id, { label, bag_label, notes }),
+    onSuccess: (slide) => {
+      qc.setQueryData(qk.slide(slide.id), slide);
+      qc.invalidateQueries({ queryKey: qk.slides() });
+    },
+  });
+}
+
+export function useDeleteSlide() {
+  const qc = useQueryClient();
+  return useMutation<{ deleted: boolean; id: string }, ApiError, string>({
+    mutationFn: (id) => deleteSlide(id),
+    onSuccess: (_data, id) => {
+      qc.removeQueries({ queryKey: qk.slide(id) });
+      qc.invalidateQueries({ queryKey: qk.slides() });
+      qc.invalidateQueries({ queryKey: qk.slideStats() });
+    },
+  });
+}
+
+export function useExtractSlide() {
+  const qc = useQueryClient();
+  return useMutation<Slide, ApiError, string>({
+    mutationFn: (id) => extractSlide(id),
+    onSuccess: (slide) => {
+      qc.setQueryData(qk.slide(slide.id), slide);
+      qc.invalidateQueries({ queryKey: qk.slides() });
+      qc.invalidateQueries({ queryKey: qk.slideStats() });
     },
   });
 }

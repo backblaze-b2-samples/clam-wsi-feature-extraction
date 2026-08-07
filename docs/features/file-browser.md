@@ -2,7 +2,12 @@
 # Feature: File Browser
 
 ## Purpose
-List, preview, download, and delete files stored in Backblaze B2.
+List, preview, download, and delete files stored in Backblaze B2. This is the
+**full-bucket** raw explorer — it shows *every* object in the bucket, including
+this sample's `slides/<id>/…` artifacts. It is intentionally distinct from the
+sample-scoped **Slide Library** at `/slides`, which lists only slide manifests
+and presents each slide as a lifecycle entity. The File Explorer is a kept part
+of the starter contract and is never removed (see [AGENTS.md §2](../../AGENTS.md#2-this-sample--the-starter-contract)).
 
 ## Used By
 - UI: `/files` page, file browser component

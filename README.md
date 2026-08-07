@@ -1,281 +1,162 @@
-<!-- last_verified: 2026-08-06 -->
-# Vibe Coding Starter Kit
+<!-- last_verified: 2026-08-07 -->
+# CLAM WSI Feature Extraction
 
-Stop wiring boilerplate and start building. This open-source starter kit gives vibe coders and AI coding agents a well-engineered foundation — a full-stack TypeScript + Python template with a pre-built dashboard UI, file upload system, and **[Backblaze B2](https://www.backblaze.com/sign-up/ai-cloud-storage?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-oss-start)** cloud storage already integrated. Save thousands of tokens on setup prompts, skip the "build me a dashboard from scratch" loop, and go straight to building your app's unique features.
+Turn **[Backblaze B2](https://www.backblaze.com/cloud-storage?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-clam-wsi-feature-extraction)** into the storage layer for a whole-slide-image (WSI) feature-extraction pipeline. This sample tiles, tissue-segments, and CNN-embeds gigapixel pathology slides using a CLAM-style workflow (OpenSlide + a truncated ResNet50), and keeps every tier — **raw slides, extracted patches, and per-slide embedding tensors** — on B2 through the S3-compatible API. It is a runnable, cloud-native reference for **whole slide image storage on B2 (S3) for pathology**, **CLAM feature extraction to object storage**, and building an **OpenSlide WSI dataset pipeline on cloud storage**. Everything runs on local OSS — **no second API key, B2 credentials only.**
 
-Explore the [Vibe Coding Starter Kit project page](https://backblazelabs.com/projects/vibe-coding-starter-kit/), the official [Backblaze B2 AI integrations and sample applications](https://www.backblaze.com/cloud-storage/b2-ai-integrations) directory, and the checked-in [local OpenAPI contract](docs/api/openapi.json).
-
-**What you get out of the box:**
-- Full-stack dashboard UI (Next.js 16 + React 19 + Tailwind v4 + shadcn/ui)
-- File upload with drag-and-drop, progress tracking, and metadata extraction
-- File browser with preview, download, and delete
-- FastAPI backend with strict layered architecture and structural tests
-- Agent-optimized docs — your AI coding agent can read the repo and start contributing immediately
+Digital pathology is a large-fan-out problem: one 1–4 GB slide explodes into thousands of patch images plus one embedding bag, so a modest cohort grows to terabytes of derived data. B2 absorbs all three tiers cheaply, and the app never keeps multi-terabyte data on local disk.
 
 ## What it looks like
 
-**Dashboard** — stats, upload activity, and recent uploads at a glance:
+**Dashboard** — cohort counts and the raw-vs-derived storage fan-out:
 
-![Dashboard view showing stat cards, upload activity chart, and recent uploads table](docs/images/b2-starterkit-dashboard1.png)
+![Dashboard with slide/patch counts and a storage fan-out panel](docs/images/dashboard.png)
 
-**File browser** — tree view with preview, download, and delete:
+**Slide detail** — thumbnail, tissue-mask overlay, patch grid, embedding shape, and artifact downloads:
 
-![File browser view showing a tree of files with hover actions](docs/images/b2-starterkit-fileview2.png)
+![Slide detail with tissue overlay, patch grid, and extraction stats](docs/images/slide-detail.png)
 
 ## Quick Start
 
-You need: Node.js >= 20, pnpm >= 9, Python >= 3.12, and a free **[Backblaze B2 account](https://www.backblaze.com/sign-up/ai-cloud-storage?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-oss-start)**.
-
-### Supported local environments
-
-Local scripts are supported on macOS, Linux, and WSL2. Native Windows is not
-supported yet because the dev scripts use POSIX shell syntax and
-`services/api/.venv/bin/*` paths; use WSL2 on Windows.
-
-Cloud or sandboxed coding-agent environments also need permission for dependency
-downloads during `pnpm run setup`. Running the app or Playwright E2E requires
-localhost server binding for the web server on port 3000 and the API on
-8000-8009, plus permission to launch the Playwright Chromium browser. If a
-sandbox denies binding, `pnpm run doctor` and `scripts/pick-port.mjs` report
-`EPERM`/`EACCES` as a permissions issue instead of a busy port. A host without
-IPv6 (many containers) is not treated as a failure — the IPv4 probe decides.
-
-### Start a new project
-
-**Option 1: GitHub Template (recommended)**
-
-Click the green **"Use this template"** button at the top of this repo, name your project, then:
+You need: Node.js >= 20, pnpm >= 9, Python >= 3.12, and a free **[Backblaze B2 account](https://www.backblaze.com/sign-up/ai-cloud-storage?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-clam-wsi-feature-extraction)**. No GPU is required — extraction auto-detects CUDA → Apple MPS → CPU and defaults to CPU.
 
 ```bash
-git clone https://github.com/yourorg/my-cool-app.git
-cd my-cool-app
+pnpm run setup     # copy .env.example -> .env, install deps + Python venv (torch, OpenSlide, ...)
+# edit .env with your B2 credentials (see below)
+pnpm dev           # web at localhost:3000, API at localhost:8000
 ```
 
-**Option 2: Clone and reinitialize**
+Then open `localhost:3000`, go to **Ingest**, pick **Sample slide (CMU-1-Small-Region)**, and click **Run extraction** on the slide page. On the ~1.9 MB sample slide the whole pipeline finishes in seconds on CPU.
+
+`pnpm run setup` installs the API's committed Python 3.12 resolution from `services/api/requirements.lock` (torch, torchvision, `openslide-bin`, scikit-image, numpy). The `openslide-bin` wheel bundles the native OpenSlide C library, so **no `brew install openslide` is needed** on macOS/Linux — see [OpenSlide native library](#openslide-native-library) for the fallback.
+
+### Add your B2 credentials
+
+Open `.env` and head to the [Backblaze B2 dashboard](https://secure.backblaze.com/b2_buckets.htm?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-clam-wsi-feature-extraction):
+
+1. **Create a bucket** → paste its unique name into `B2_BUCKET_NAME`, and set `B2_REGION` to the bucket's region (e.g. `us-west-004`). The S3 endpoint is derived as `https://s3.<region>.backblazeb2.com` — no endpoint to paste.
+2. **Create an application key** with `Read and Write` → paste `keyID` into `B2_APPLICATION_KEY_ID` and `applicationKey` into `B2_APPLICATION_KEY` (shown once).
+
+> Walkthroughs: [creating a bucket](https://www.backblaze.com/docs/cloud-storage-create-and-manage-buckets?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-clam-wsi-feature-extraction) and [creating app keys](https://www.backblaze.com/docs/cloud-storage-create-and-manage-app-keys?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-clam-wsi-feature-extraction).
+
+## The Slide lifecycle
+
+**Slide** is the one entity. All five lifecycle verbs are in the UI:
+
+1. **Ingest (create)** — `/slides/new`. Register the bundled sample slide (server fetches it and lands it in B2) or upload your own `.svs`/`.tiff`. Uploads stream **browser-direct to B2** via a presigned PUT, so a multi-GB slide never passes through the API. Status → `registered`.
+2. **Run extraction (run)** — on the slide page. OpenSlide opens the slide, tissue is segmented on a downsampled thumbnail, a patch grid is tiled over tissue and written to B2, the CNN embeds every patch, and one `[N_patches, 1024]` embedding `.pt` + `manifest.json` are written back. Status: `registered` → `extracting` → `extracted` (or `failed`). Cost: **$0** (B2 storage only).
+3. **Slide Library (read)** — `/slides` grid + `/slides/[id]` detail (thumbnail, tissue overlay, patch grid, patch count, embedding shape, downloads). This app-scoped Library complements — never replaces — the full-bucket **File Explorer** at `/files`.
+4. **Edit metadata (edit)** — label, **MIL bag label**, and notes; opens pre-filled and writes back into `manifest.json`.
+5. **Delete (delete)** — removes the slide and all derived artifacts, scoped strictly to `slides/<id>/` (never bucket-wide).
+
+Every object lands under one app prefix:
+
+```
+slides/<id>/source/<filename>               raw WSI (primary raw asset)
+slides/<id>/patches/patch_<row>_<col>.png    extracted patches (the fan-out)
+slides/<id>/features/embeddings.pt           per-slide feature bag [N_patches, 1024]
+slides/<id>/manifest.json                    coords, params, MIL bag label, annotations
+slides/<id>/preview/{thumbnail,tissue_overlay,patch_grid}.png   UI previews
+```
+
+## Local ML & device selection
+
+Feature extraction runs entirely on local OSS — there is no external model API. The encoder is CLAM's default: a torchvision **ResNet50 truncated after layer3** with adaptive average pooling (1024-d per patch); ImageNet weights download once (~100 MB) and cache under `services/api/.torch_cache` (gitignored).
+
+Device is **auto-detected at runtime** — `EXTRACT_DEVICE=auto` picks the first available of CUDA → Apple MPS → CPU and defaults to CPU, so it never hard-requires a GPU. Force it with `EXTRACT_DEVICE=cpu|cuda|mps`. The API launch env sets `KMP_DUPLICATE_LIB_OK=TRUE` because torch and numpy can each load their own OpenMP runtime (a duplicate-libomp abort on macOS otherwise).
+
+### OpenSlide native library
+
+`openslide-python` needs the OpenSlide C library. This sample pins **`openslide-bin`**, a PyPI wheel that bundles the native lib (macOS arm64 + Linux), so `pnpm run setup` needs no system package. If you ever run somewhere without a wheel, install the system library instead:
 
 ```bash
-git clone https://github.com/backblaze-b2-samples/vibe-coding-starter-kit.git my-cool-app
-cd my-cool-app
-rm -rf .git
-git init
-git add .
-git commit -m "Initial commit from vibe-coding-starter-kit"
+brew install openslide          # macOS
+sudo apt-get install openslide-tools libopenslide-dev   # Debian/Ubuntu
 ```
 
-Either way you get a clean project with no upstream history — ready to push to your own repo and point your agent at it.
+## Get a test slide
 
-### Setup
+The **Sample slide** ingest option fetches OpenSlide's freely-redistributable ~1.9 MB [`CMU-1-Small-Region.svs`](https://openslide.cs.cmu.edu/download/openslide-testdata/Aperio/) so the demo tiles and extracts in seconds on CPU (dozens of patches, not thousands). Point `SAMPLE_SLIDE_URL` at another slide to change it. Real gigapixel production slides (1–4 GB, tens of thousands of patches) use the **Upload my own WSI** option and the browser-direct presigned PUT path.
 
-**1. Run setup**
+## Building on this kit
 
-```bash
-pnpm run setup
-```
+This sample is built on the Backblaze B2 vibe-coding starter kit. When you adapt it:
 
-This copies `.env.example` to `.env` only when `.env` does not already exist,
-installs workspace dependencies from `pnpm-lock.yaml`, creates
-`services/api/.venv` if missing, validates that an existing venv uses Python
-3.12+, and installs the API's committed Python 3.12 resolution from
-`services/api/requirements.lock`. It is safe to rerun and never overwrites an
-existing `.env`.
+- **Keep** the UI kit (`apps/web/src/components/ui/` + `globals.css` tokens + `/design`), the full-bucket **File Explorer** (`/files`), and **Upload** (`/upload`) — the reusable B2-backed scaffolding.
+- **Adapt** the Dashboard and the `slides/` domain to your own derived-artifact workflow. New aggregations flow through the same `runtime → service → repo` layering and TanStack Query hooks.
+- **Rebrand** by editing one file: `apps/web/src/lib/app-config.ts` (`APP_NAME`, `APP_DESCRIPTION`) updates the sidebar, header, and breadcrumb everywhere. The FastAPI title derives from it.
 
-> Use the `pnpm run` form: `setup` (like `doctor`) is a built-in pnpm command
-> before pnpm 11, so bare `pnpm setup` would run pnpm's own command instead of
-> this script.
-
-**2. Add your B2 credentials**
-
-Open `.env` in your editor and keep it visible. Then head to the [Backblaze B2 dashboard](https://secure.backblaze.com/b2_buckets.htm?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-oss-start) and:
-
-1. **Create a bucket.** B2 will show two values — paste each into `.env`:
-   - **Bucket Unique Name** → `B2_BUCKET_NAME`
-   - **Endpoint** → `B2_ENDPOINT`
-2. **Create an application key** with `Read and Write` permission. B2 will show two values — paste each into `.env`:
-   - **keyID** → `B2_KEY_ID`
-   - **applicationKey** → `B2_APPLICATION_KEY` *(only shown once — paste it now)*
-
-> Want a walkthrough? See the docs for [creating a bucket](https://www.backblaze.com/docs/cloud-storage-create-and-manage-buckets) and [creating app keys](https://www.backblaze.com/docs/cloud-storage-create-and-manage-app-keys).
-
-**3. Run it**
-
-```bash
-pnpm dev
-```
-
-That's it. Frontend at `localhost:3000`, API at `localhost:8000`. Upload a file and see it working. Interactive API docs (Swagger UI) are at `localhost:8000/docs`, with ReDoc at `/redoc`.
-
-`pnpm dev` runs the preflight check first — it catches the common setup gotchas (wrong Node/Python version, missing venv, missing or placeholder `.env`, ports already taken) and tells you exactly how to fix each one. Run it standalone any time with `pnpm run doctor`.
-
-## When to use
-
-Use this repository as a template or sample implementation when you want to
-clone or fork a working file-management dashboard, connect it to your own B2
-bucket, and then rebrand and extend it for your application. It provides
-production-minded engineering controls—including strict architecture,
-contract checks, tests, linting, and deployment runbooks—so you can begin with
-a dependable scaffold instead of a blank prototype.
-
-## When not to use
-
-Do not choose this repository expecting a complete hosted SaaS product or a
-drop-in production service. It does not provide managed hosting, user accounts,
-authentication, tenant isolation, billing, or on-call operations. Before using
-an adapted application in production, you own its product-specific security,
-operations, capacity, compliance, and support decisions.
-
-## Building Your App
-
-When you adapt this kit for a new app, keep the shared scaffolding and only swap out what's app-specific:
-
-- **Keep** the UI kit (`apps/web/src/components/ui/` + design tokens in `globals.css` + `/design`).
-- **Keep** the File Explorer (`/files`) and Upload (`/upload`) pages and their sidebar nav entries — they're the reusable B2-backed surface.
-- **Adapt** the Dashboard (`/`) to your use case — replace the default stats, chart, and recent uploads with metrics that reflect what your app actually does.
-- **Rebrand** by editing a single file: `apps/web/src/lib/app-config.ts` holds the app name and description (`APP_NAME`, `APP_DESCRIPTION`). Changing them there updates the page title, sidebar, and breadcrumb everywhere — no other files to touch.
-
-Full contract and rationale: [AGENTS.md §2 — Building on This Starter Kit](AGENTS.md#2-building-on-this-starter-kit).
-
-## Agent-First Architecture
-
-This repo is optimized for coding agents. Use the template, point your agent at it, and start building.
-
-The structure follows the principle that **repository knowledge is the system of record**. Anything an agent can't access in-context doesn't exist — so everything it needs to reason about the codebase is versioned, co-located, and discoverable from the repo itself.
-
-### How it works
-
-**[AGENTS.md](AGENTS.md) is the single source of truth for all coding agents.** Its bounded, agent-sized entry point gives agents the repository layout, architectural invariants, commands, conventions, and pointers to deeper docs. Agent-specific files (CLAUDE.md, GEMINI.md, Copilot instructions, etc.) are thin pointers back to AGENTS.md.
-
-**Architecture is enforced mechanically, not by convention.** Layering rules, import boundaries, backend application Python file-size limits, and SDK containment are verified by structural tests and lints that run on every change. When rules are enforceable by code, agents follow them reliably.
-
-**The knowledge base is structured for progressive disclosure:**
-
-```
-AGENTS.md              Single source of truth — layout, invariants, commands, conventions
-ARCHITECTURE.md        System layout, layering rules, data flows
-docs/
-  features/            Feature docs (inputs, outputs, flows, edge cases)
-  app-workflows.md     User journeys
-  dev-workflows.md     Engineering workflows and testing
-  SECURITY.md          Security principles
-  RELIABILITY.md       Reliability expectations
-  exec-plans/          Execution plans and tech debt tracker
-```
-
-### Key design decisions
-
-| Principle | Implementation |
-|-----------|---------------|
-| Give agents a single source of truth | AGENTS.md — bounded layout, invariants, commands, conventions |
-| Enforce invariants mechanically | Structural tests + ruff + ESLint verify boundaries |
-| DRY documentation | Each fact lives in one place; no redundant files to drift |
-| Strict layered architecture | `types -> config -> repo -> service -> runtime`, enforced by tests |
-| Prefer boring, composable libraries | stdlib logging over frameworks, Pydantic over ad-hoc validation |
-| Contain external SDKs | `boto3` only in `repo/` layer — verified by structural test |
-| Keep files agent-sized | 300-line limit per file, enforced by test |
-| Docs updated with code | Same-PR requirement prevents documentation rot |
-| Structured observability | JSON logging, `/metrics` endpoint, request tracing |
-
-This approach draws from [OpenAI's experience building with Codex](https://openai.com/index/harness-engineering/): agents work best in environments with strict boundaries, predictable structure, and progressive context disclosure.
+Full contract: [AGENTS.md §2](AGENTS.md#2-this-sample--the-starter-contract).
 
 ## Core Features
 
-- [File Upload](docs/features/file-upload.md) — drag-and-drop upload with real-time progress
-- [File Browser](docs/features/file-browser.md) — list, preview, download, delete files
-- [Dashboard](docs/features/dashboard.md) — stats cards, upload chart, recent uploads
-- [Metadata Extraction](docs/features/metadata-extraction.md) — image dimensions, EXIF, PDF info, checksums
-- [Design System](docs/design-system.md) — tokens, primitives, AI elements, the blaze generating loader, and inline `ErrorState` / `EmptyState` patterns. Live preview at `/design`.
-- Inline error handling — fetch failures surface *what's wrong* (API offline, 401, 5xx) and offer a Retry, instead of silently rendering empty state.
-- Single-source config — one `.env` at the repo root powers both API and web app, validated at startup so misconfig fails fast with a readable message.
-- Centralized data layer — every fetch goes through TanStack Query hooks in `apps/web/src/lib/queries.ts`; cache invalidation is one call after a mutation.
-- Checked local API contract — [`docs/api/openapi.json`](docs/api/openapi.json) plus `pnpm contract:check` catch FastAPI/client route drift; it describes the template API you run, not a hosted public endpoint.
-- Structural tests — verify layering rules, import boundaries, SDK containment, and backend application Python file-size limits
-- Structured JSON logging — every request traced with `request_id` and timing
-- `/health` endpoint — B2 connectivity check
-- `/metrics` endpoint — Prometheus-format counters (request count, latency, uploads)
-- `/docs` + `/redoc` — auto-generated interactive API docs (toggle off in prod with `ENABLE_DOCS=false`)
-- Per-IP rate limiting and magic-byte upload validation — see [SECURITY.md](docs/SECURITY.md)
+- [Slide Ingest](docs/features/slide-ingest.md) — register the sample slide or upload your own WSI (presigned PUT direct to B2)
+- [Tissue Segmentation](docs/features/tissue-segmentation.md) — CLAM-style HSV + Otsu tissue masking and patch tiling (OpenSlide)
+- [Feature Extraction](docs/features/feature-extraction.md) — truncated ResNet50 encoder, device auto-detect, `.pt` embedding bag
+- [Slide Manifest](docs/features/slide-manifest.md) — `manifest.json`: patch coords, params, MIL bag label, slide-level annotations
+- [MIL Bag Labels](docs/features/mil-bag-labels.md) — weakly-supervised slide-level labels stored alongside embeddings
+- [Derived Fan-out](docs/features/derived-fanout.md) — why one slide → thousands of patches + one bag, and why B2 stores all three tiers
+- [Dashboard](docs/features/dashboard.md) — cohort counts and raw-vs-derived storage fan-out
+- [File Browser](docs/features/file-browser.md) — the full-bucket explorer (distinct from the Slide Library)
+- [Settings](docs/features/settings.md) — device, MIL bag labels, and weights-cache configuration
+- [Design System](docs/design-system.md) — tokens, primitives, error/empty states. Live at `/design`.
+- Checked local API contract — [`docs/api/openapi.json`](docs/api/openapi.json) + `pnpm contract:check` catch FastAPI/client route drift
+- Structural tests, structured JSON logging, `/health` (B2 connectivity), `/metrics`, per-IP rate limiting
 
 ## Tech Stack
 
-- TypeScript, Next.js 16, React 19, Tailwind v4, shadcn/ui, Recharts
-- TanStack Query — caching, dedup, retry, stale-while-revalidate for every fetch
-- Python 3.12+, FastAPI, boto3, Pydantic v2, Pillow, PyPDF2
-- Backblaze B2 (S3-compatible object storage)
-- pnpm workspaces (monorepo)
+- TypeScript, Next.js 16, React 19, Tailwind v4, shadcn/ui, TanStack Query
+- Python 3.12+, FastAPI, boto3, Pydantic v2
+- OpenSlide (`openslide-bin` + `openslide-python`), scikit-image, PyTorch + torchvision (ResNet50), Pillow, numpy
+- Backblaze B2 (S3-compatible object storage), pnpm workspaces (monorepo)
 
 ## Commands
 
 | Command | What it does |
 |---------|-------------|
-| `pnpm run setup` | Idempotently copy `.env.example` to `.env` only if missing, install workspace dependencies, create the backend venv, and install the locked API dependencies |
-| `pnpm run doctor` | Preflight environment check (also runs automatically before `pnpm dev`) |
+| `pnpm run setup` | Copy `.env.example` → `.env` if missing, install workspace deps, create the venv, install the locked API deps |
+| `pnpm run doctor` | Preflight environment check (also runs before `pnpm dev`) |
 | `pnpm dev` | Start frontend + backend |
-| `pnpm dev:web` | Frontend only |
-| `pnpm dev:api` | Backend only |
+| `pnpm dev:web` / `pnpm dev:api` | Frontend / backend only |
 | `pnpm contract:export` | Export deterministic FastAPI OpenAPI JSON to `docs/api/openapi.json` |
-| `pnpm contract:check` | Verify the checked-in OpenAPI artifact and frontend API client route registry |
+| `pnpm contract:check` | Verify the checked-in OpenAPI artifact and frontend client route registry |
 | `pnpm check:agent-docs` | Validate agent shims, command docs, CI claims, and `.env` ignore coverage |
-| `pnpm verify` | Credential-free canonical non-live pre-PR suite — runs `check:agent-docs`, `verify:api`, then `verify:web` |
+| `pnpm verify` | Credential-free pre-PR suite — `check:agent-docs`, then `verify:api`, then `verify:web` |
 | `pnpm verify:api` | Backend half: API lint, API tests, structure tests |
 | `pnpm verify:web` | Frontend half: web lint, web unit tests, web typecheck + build |
-| `pnpm verify:full` | `pnpm run doctor`, then `pnpm verify`, then Playwright E2E; requires populated `.env`, local server/browser permission, port 3000 free, and Chromium installed |
-| `pnpm build` | Build frontend |
-| `pnpm lint` | Lint frontend |
-| `pnpm lint:api` | Lint backend (ruff) |
-| `pnpm test:web` | Run frontend unit tests (vitest) |
-| `pnpm test:api` | Run backend tests |
-| `pnpm test:live:b2` | Opt-in real B2 connectivity test; requires `RUN_LIVE_B2_TESTS=1` and non-production credentials |
-| `pnpm check:structure` | Verify layering rules |
-| `pnpm test:e2e` | Playwright E2E smoke tests (run `pnpm --filter @vibe-coding-starter-kit/web exec playwright install chromium` once first) |
+| `pnpm verify:full` | `pnpm run doctor`, then `pnpm verify`, then Playwright E2E |
+| `pnpm build` / `pnpm lint` | Build / lint frontend |
+| `pnpm lint:api` / `pnpm test:api` | Lint / test backend |
+| `pnpm test:live:b2` | Opt-in real B2 connectivity test (requires `RUN_LIVE_B2_TESTS=1`) |
 
-Run `pnpm run setup` once before local development, and rerun it after pulling
-dependency changes. It installs workspace dependencies from `pnpm-lock.yaml`
-and API dependencies from `services/api/requirements.lock`. If you add a Node
-dependency yourself, run `pnpm install` to refresh `pnpm-lock.yaml`; for an API
-dependency, follow the reviewed refresh workflow in
-[docs/dev-workflows.md](docs/dev-workflows.md#python-dependency-updates). Run
-`pnpm verify` before opening a PR; it needs
-`services/api/.venv` from setup. Run `pnpm verify:full` when you can start the
-local app stack and browser tests: `.env` must contain real B2 values, local
-server binding must be permitted, Playwright's Chromium browser must be
-installed, and port 3000 must be free (or already serving this app). Playwright
-waits on `http://localhost:3000`,
-but `next dev` falls back to the next free port when 3000 is taken — so an
-unrelated process on 3000 makes the E2E run time out. The API starts at
-`localhost:8000` or the next free port chosen by `scripts/dev.sh`.
-
-`pnpm verify` needs neither B2 credentials nor a browser. For parallel agents,
-use one Git worktree per verification run as documented in [the verification
-workflow](docs/dev-workflows.md#non-live-verification). That page also covers
-normal timing, slow-run recovery, and installing the optional local pre-commit
-hooks.
+Run `pnpm run setup` once before local development and rerun it after pulling dependency changes. Run `pnpm verify` before opening a PR (it needs `services/api/.venv` from setup). Use `pnpm verify:full` when you can start the local stack and browser tests. Backend gates run with `KMP_DUPLICATE_LIB_OK=TRUE`.
 
 ## Deploying to Vercel
 
-This starter deploys to Vercel as **one project** using Vercel
-[Services](https://vercel.com/docs/services): the Next.js web app and the
-FastAPI API build from the same repo and share a single origin — the web app at
-`/` and the API under `/api`. One click, one project, **no CORS and no wiring
-two URLs together**.
+This sample deploys to Vercel as **one project** using Vercel [Services](https://vercel.com/docs/services): the Next.js web app and the FastAPI API build from the same repo and share a single origin (web at `/`, API under `/api`). Uploads go **directly from the browser to B2**, so Vercel's Function payload limit does not cap slide size — but the bucket must allow your deploy origin in its CORS (see the [Vercel delivery contract](infra/vercel/README.md)).
 
-[![Deploy to Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fbackblaze-b2-samples%2Fvibe-coding-starter-kit&project-name=vcsk&env=B2_KEY_ID,B2_APPLICATION_KEY,B2_ENDPOINT,B2_BUCKET_NAME&envDescription=B2%20credentials%20and%20bucket&envLink=https%3A%2F%2Fgithub.com%2Fbackblaze-b2-samples%2Fvibe-coding-starter-kit%2Fblob%2Fmain%2Finfra%2Fvercel%2FREADME.md)
+[![Deploy to Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fbackblaze-b2-samples%2Fclam-wsi-feature-extraction&project-name=clam-wsi&env=B2_APPLICATION_KEY_ID,B2_APPLICATION_KEY,B2_BUCKET_NAME,B2_REGION&envDescription=B2%20credentials%2C%20bucket%2C%20and%20region&envLink=https%3A%2F%2Fgithub.com%2Fbackblaze-b2-samples%2Fclam-wsi-feature-extraction%2Fblob%2Fmain%2Finfra%2Fvercel%2FREADME.md)
 
-Set the B2 credentials and bucket. Uploads go **directly from the browser to
-B2** (presigned PUT), so Vercel's 4.5 MB Function payload limit doesn't apply
-and the starter's 100 MB default stays — one caveat: the bucket must allow your
-deploy origin in its CORS (see the
-[Vercel delivery contract](infra/vercel/README.md)). The web app reaches the API
-at the same-origin `/api` automatically, so **no `NEXT_PUBLIC_API_URL` is
-needed**; the repo-root `vercel.json` declares the `web` and `api` services and
-routes `/api/*` to FastAPI (which serves its native `/health`, `/files`, … paths
-— the Vercel-only `services/api/index.py` strips the `/api` prefix).
+The API is unauthenticated and bucket-wide, so use a dedicated B2 bucket/prefix and key for any preview. Deploying is always a human-approved action — nothing here performs one for you. Full variable classification, the two-Projects alternative, and rollback are in the [Vercel delivery contract](infra/vercel/README.md).
 
-The button clones the repo into your account as a quick preview. For the full
-variable classification, the two-separate-Projects alternative, security
-controls, preview/production process, `/health` verification, and rollback,
-follow the [Vercel delivery contract](infra/vercel/README.md). The API is
-unauthenticated and bucket-wide, so use a dedicated B2 bucket/prefix and key for
-any preview. Deploying is a human-approved action — nothing here performs one
-for you.
+## FAQ
+
+**How do I store whole slide images on Backblaze B2 for a pathology pipeline?**
+Ingest a slide (sample or your own `.svs`/`.tiff`) and it lands under `slides/<id>/source/` on B2 through the S3-compatible API. Uploads stream browser-direct via a presigned PUT so multi-GB slides never buffer through the API. Running extraction then writes patches, an embedding bag, previews, and a manifest under the same prefix.
+
+**What does CLAM feature extraction to object storage look like here?**
+The pipeline follows CLAM's approach — tissue segmentation on a downsampled thumbnail, a patch grid tiled over tissue, and a truncated ResNet50 that embeds each patch into a 1024-d vector — implemented in-repo with permissive dependencies (the GPL CLAM repo is *not* vendored). The result is a `[N_patches, 1024]` `.pt` embedding bag written to `slides/<id>/features/embeddings.pt` on B2, ready for a downstream MIL model.
+
+**Can I build an OpenSlide WSI dataset pipeline on cloud storage with this?**
+Yes. OpenSlide reads the slides, all raw/patch/feature artifacts live on B2, and the app never keeps multi-terabyte data on local disk — so a cohort scales to terabytes of derived data on object storage instead of a local filesystem.
+
+**Do I need a GPU?**
+No. Extraction auto-detects CUDA → Apple MPS → CPU and defaults to CPU. The bundled sample slide runs the whole pipeline in seconds on CPU.
+
+**Is it free to run?**
+The code is MIT-licensed and the ML is local OSS, so a full demo run costs **$0 beyond B2 storage**. No second API key is needed.
+
+**Does it include auth or multi-tenant isolation?**
+No. It is single-tenant and unauthenticated. Deletes are scoped to one slide's prefix, but there is no per-user isolation — add auth and per-tenant scoping before pointing it at sensitive data.
 
 ## Documentation Map
 
@@ -283,73 +164,18 @@ for you.
 |-----|---------|
 | [AGENTS.md](AGENTS.md) | Agent table of contents — start here |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System layout, layering, data flows |
-| [docs/features/](docs/features/) | Feature docs (upload, browser, dashboard, metadata) |
-| [docs/design-system.md](docs/design-system.md) | Design tokens, primitives, AI elements, loader, error/empty states |
+| [docs/features/](docs/features/) | Feature docs (ingest, tiling, extraction, manifest, fan-out, …) |
 | [docs/app-workflows.md](docs/app-workflows.md) | User journeys |
 | [docs/dev-workflows.md](docs/dev-workflows.md) | Engineering workflows and testing |
 | [docs/SECURITY.md](docs/SECURITY.md) | Security principles |
 | [docs/RELIABILITY.md](docs/RELIABILITY.md) | Reliability expectations |
-| [docs/api/openapi.json](docs/api/openapi.json) | Checked contract for the template's local FastAPI API |
+| [docs/api/openapi.json](docs/api/openapi.json) | Checked contract for the local FastAPI API |
 | [infra/vercel/README.md](infra/vercel/README.md) | Vercel deployment contract |
-| [docs/exec-plans/](docs/exec-plans/) | Execution plans and tech debt tracker |
-
-## FAQ
-
-**What is the Vibe Coding Starter Kit?**
-An open-source, full-stack template (Next.js 16 + FastAPI) with a pre-built dashboard UI, drag-and-drop file upload, and file browser, with [Backblaze B2](https://www.backblaze.com/cloud-storage) cloud storage already integrated. You clone it, connect it to your own B2 bucket, then rebrand and extend it for your app.
-
-**Is it free?**
-Yes. The code is MIT-licensed (see [License](#license)), and Backblaze B2 offers a free account to get started.
-
-**Can I use it in production?**
-It's a template/sample Backblaze maintains to help developers get started with B2. Production use is possible with caution and requires your own validation — you own the product-specific security, operations, capacity, compliance, and support decisions for anything you adapt, and the repository software carries no SLA. See [When not to use](#when-not-to-use) and [Maintenance and support](#maintenance-and-support).
-
-**Does it include authentication, user accounts, or multi-tenant isolation?**
-No. It does not provide managed hosting, user accounts, authentication, tenant isolation, billing, or on-call operations. Add whatever your application requires on top of the scaffold.
-
-**Do I have to use Backblaze B2?**
-It integrates Backblaze B2 through the S3-compatible API, and B2 is the storage the kit is built around. You supply your own B2 bucket and application key during setup.
-
-**Is it really built for AI coding agents?**
-Yes. [AGENTS.md](AGENTS.md) is the single source of truth for coding agents, architectural boundaries are enforced mechanically by structural tests and lints (not by convention), and the docs use progressive disclosure — so an agent can read the repo and start contributing immediately.
-
-**What's the tech stack?**
-Frontend: TypeScript, Next.js 16, React 19, Tailwind v4, shadcn/ui, TanStack Query. Backend: Python 3.12+, FastAPI, boto3, Pydantic v2. Storage: Backblaze B2 (S3-compatible). See [Tech Stack](#tech-stack).
-
-**How do I rebrand it for my own app?**
-Edit a single file — `apps/web/src/lib/app-config.ts` (`APP_NAME`, `APP_DESCRIPTION`) — and the page title, sidebar, and breadcrumb update everywhere. See [Building Your App](#building-your-app).
-
-**How do I deploy it?**
-It deploys to Vercel as a single project — the web app and FastAPI API build from the same repo and share one origin (web at `/`, API under `/api`), so there's no CORS or second URL to wire up. A Railway path is also documented. Deploying is always a human-approved action — see [Deploying to Vercel](#deploying-to-vercel).
-
-**Does it work on Windows?**
-Local scripts are supported on macOS, Linux, and WSL2. Native Windows is not supported yet — use WSL2 on Windows.
-
-**Where do I get help or report bugs?**
-Report repository defects and feature requests through [GitHub Issues](https://github.com/backblaze-b2-samples/vibe-coding-starter-kit/issues). For B2 account, billing, service, or API help, use [Backblaze Support](https://www.backblaze.com/help).
 
 ## Maintenance and support
 
-Backblaze maintains this open-source template/sample to help developers get
-started with B2. Production use is possible with caution and requires your own
-validation. Report repository defects and feature requests through
-[GitHub Issues](https://github.com/backblaze-b2-samples/vibe-coding-starter-kit/issues);
-for B2 account, billing, service, or API help, use
-[Backblaze Support](https://www.backblaze.com/help). This template/sample is
-not covered by the Backblaze service level agreement, and no SLA is provided
-for the repository software; any B2 service or support commitments are governed
-separately by the applicable Backblaze terms and support plan.
-
-## Contributing
-
-Start with [AGENTS.md](AGENTS.md). It's the map — everything else is discoverable from there. For local commit hooks, follow [the pre-commit workflow](docs/dev-workflows.md#pre-commit).
+Backblaze maintains this open-source sample to help developers build on B2. Production use is possible with caution and requires your own validation; you own the product-specific security, operations, capacity, compliance, and support decisions for anything you adapt. Report defects through [GitHub Issues](https://github.com/backblaze-b2-samples/clam-wsi-feature-extraction/issues); for B2 account, billing, or service help use [Backblaze Support](https://www.backblaze.com/help?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-clam-wsi-feature-extraction). This sample is not covered by the Backblaze service level agreement.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
-
-## Claude Agent B2 Skill
-
-Manage Backblaze B2 from your terminal using natural language (list/search, audits, stale or large file detection, security checks, safe cleanup).
-
-Repo: [https://github.com/backblaze-b2-samples/claude-skill-b2-cloud-storage](https://github.com/backblaze-b2-samples/claude-skill-b2-cloud-storage)
+MIT License — see [LICENSE](LICENSE) for details. CLAM ([mahmoodlab/CLAM](https://github.com/mahmoodlab/CLAM), Lu et al., *Nature Biomedical Engineering* 2021) and [OpenSlide](https://openslide.org) are credited as the methodology and tooling references; their code is not redistributed here.

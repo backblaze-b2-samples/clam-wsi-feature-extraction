@@ -4,19 +4,19 @@
 ## Components
 
 - **apps/web/** — Next.js 16 frontend (App Router, Tailwind v4, shadcn/ui)
-  - Dashboard with stats, upload chart, recent uploads
-  - File upload with drag-and-drop, progress tracking
-  - File browser with preview, download, delete
+  - Slide Library (`/slides`) + Ingest (`/slides/new`) + slide detail/edit
+  - Cohort dashboard (slide/patch counts, raw-vs-derived storage fan-out)
+  - Full-bucket File Explorer (`/files`) and generic Upload (`/upload`)
   - Dark mode via `next-themes`
 - **services/api/** — FastAPI backend (layered architecture)
-  - REST API for file upload, listing, deletion
-  - B2 S3 integration via boto3
-  - File metadata extraction (images, PDFs)
+  - Slide lifecycle: ingest (sample fetch or presigned upload), CLAM-style
+    tissue segmentation + patch tiling (OpenSlide), CNN feature extraction
+    (truncated ResNet50), edit, delete (prefix-scoped)
+  - B2 S3 integration via boto3 (raw slides, patches, embedding bags, previews)
   - Health check endpoint with B2 connectivity verification
-  - Structured JSON logging with request tracing
-  - Prometheus-format metrics endpoint
+  - Structured JSON logging with request tracing; Prometheus-format metrics
 - **packages/shared/** — TypeScript type definitions
-  - Mirrors Pydantic models from the API
+  - Mirrors Pydantic models from the API (Slide, SlideStats, encoders, …)
   - Consumed by `apps/web/` as workspace dependency
 
 ## Backend Layering
@@ -49,13 +49,21 @@ runtime/   FastAPI routes — calls service, never repo directly
 services/api/
   main.py                  App entrypoint, middleware, router registration
   app/
-    types/                 Pydantic models (FileMetadata, UploadStats, etc.)
+    types/                 Pydantic models (FileMetadata, Slide, SlideStats, …)
     config/                Settings loaded from environment
-    repo/                  B2 S3 client (data access layer)
-    service/               Business logic (upload, files, metadata)
-    runtime/               FastAPI route handlers
+    repo/                  B2 S3 client + object/prefix I/O (data access layer)
+    service/               Business logic: slides, tiling, features, extraction,
+                           rendering, files, upload (heavy ML imports are LAZY)
+    runtime/               FastAPI route handlers (slides, files, upload, …)
   tests/                   pytest tests (structural + integration)
 ```
+
+The WSI pipeline keeps every heavy import (openslide, torch, torchvision,
+scikit-image, numpy) inside functions in `service/tiling.py`,
+`service/features.py`, and `service/rendering.py`, so importing the FastAPI app
+and collecting tests never loads the scientific stack. `service/extraction.py`
+composes tiling + features + repo writes and depends one-way on
+`service/slides.py` (which owns the `manifest.json` read/write helpers).
 
 ## Boundary Invariants
 
@@ -80,7 +88,7 @@ services/api/
   the Vercel-only `services/api/index.py` strips the `/api` prefix so FastAPI
   keeps its native paths (`/health`, `/files`, …). Uploads go directly from the
   browser to B2 via a presigned PUT (see
-  [File Upload](docs/features/file-upload.md)), so they bypass the Function's
+  [Slide Ingest](docs/features/slide-ingest.md)), so they bypass the Function's
   4.5 MB payload ceiling entirely — the bucket must allow the deploy origin in
   its CORS. A two-separate-Projects alternative and the full delivery contract
   live in [infra/vercel/README.md](infra/vercel/README.md).
@@ -108,10 +116,13 @@ See [docs/SECURITY.md](docs/SECURITY.md) for full security documentation.
 
 ## Data Flows
 
-- **Upload**: Browser -> `POST /upload/presign` (API validates the declared file + signs a PUT) -> Browser PUTs bytes **directly to B2** -> `POST /upload/verify` (API HEADs + Range-sniffs the stored object) -> response
-- **List**: Browser -> `GET /files` -> service calls repo -> returns file list
-- **Download**: Browser -> `GET /files/{key}/download` -> service validates key -> repo generates presigned URL -> browser downloads
-- **Delete**: Browser -> `DELETE /files/{key}` -> service validates key -> repo deletes from B2
+- **Ingest (sample)**: Browser -> `POST /slides` (source=sample) -> API fetches the OpenSlide test slide, `put_object`s it under `slides/<id>/source/`, renders a thumbnail, writes `manifest.json` -> response (status `registered`)
+- **Ingest (own WSI)**: Browser -> `POST /slides` (source=upload) -> API validates + persists a pending manifest and signs a PUT -> Browser PUTs the slide **directly to B2** -> `POST /slides/{id}/register` (API HEADs the object + renders the thumbnail) -> response
+- **Extract**: Browser -> `POST /slides/{id}/extract` -> service opens the slide (OpenSlide), tissue-segments a thumbnail, tiles a patch grid, `put_object`s each patch PNG, embeds patches with the truncated ResNet50, writes `features/embeddings.pt` + previews, updates the manifest -> response (status `extracted`)
+- **Read**: Browser -> `GET /slides` / `GET /slides/{id}` -> service scans/reads `manifest.json` -> returns summaries/full manifest
+- **Asset**: Browser -> `GET /slides/{id}/asset/{name}` -> repo generates a presigned URL (inline preview or attachment download)
+- **Delete**: Browser -> `DELETE /slides/{id}` -> service `delete_prefix("slides/<id>/")` — SCOPED, never bucket-wide
+- **Files (kept)**: the generic upload (`/upload/presign` + `/upload/verify`) and full-bucket list/download/delete flows are retained unchanged
 
 ## Observability
 
@@ -134,23 +145,29 @@ silently drift from FastAPI. `GET /metrics` is intentionally server-only.
 
 ## Canonical Files
 
-- Layered API handler: `services/api/app/runtime/upload.py`
-- Service orchestration: `services/api/app/service/upload.py`
-- B2 data access (repo layer): `services/api/app/repo/b2_client.py`
-- Pydantic models: `services/api/app/types/` (`files.py`, `upload.py`, `stats.py`, `formatting.py`)
+- Slide routes (runtime): `services/api/app/runtime/slides.py`
+- Slide CRUD + ingest orchestration: `services/api/app/service/slides.py`
+- Tiling + tissue segmentation (OpenSlide): `services/api/app/service/tiling.py`
+- Feature extraction (torch ResNet50): `services/api/app/service/features.py`
+- Extraction pipeline (composition): `services/api/app/service/extraction.py`
+- B2 data access (repo layer): `services/api/app/repo/b2_client.py`, `repo/b2_object.py`
+- Pydantic models: `services/api/app/types/` (`slides.py`, `files.py`, `upload.py`, …)
 - Config (pydantic-settings): `services/api/app/config/settings.py`
 - Structural tests: `services/api/tests/test_structure.py`
 - OpenAPI contract: `docs/api/openapi.json`
-- OpenAPI exporter: `services/api/scripts/export_openapi.py`
 - Frontend API client: `apps/web/src/lib/api-client.ts`
 - Shared TypeScript types: `packages/shared/src/types.ts`
 
 ## Core Features
 
-- [File Upload](docs/features/file-upload.md)
-- [File Browser](docs/features/file-browser.md)
+- [Slide Ingest](docs/features/slide-ingest.md)
+- [Tissue Segmentation](docs/features/tissue-segmentation.md)
+- [Feature Extraction](docs/features/feature-extraction.md)
+- [Slide Manifest](docs/features/slide-manifest.md)
+- [MIL Bag Labels](docs/features/mil-bag-labels.md)
+- [Derived Fan-out](docs/features/derived-fanout.md)
 - [Dashboard](docs/features/dashboard.md)
-- [Metadata Extraction](docs/features/metadata-extraction.md)
+- [File Browser](docs/features/file-browser.md)
 
 ## References
 
