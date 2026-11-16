@@ -21,7 +21,7 @@ PyPDF2>=3.0.0
 # fallback (see README).
 torch>=2.4.0,<2.9.0
 torchvision>=0.19.0,<0.24.0
-openslide-bin>=4.0.0
+openslide-bin>=4.0.1.2
 openslide-python>=1.4.1,<2.0.0
 scikit-image>=0.24.0,<0.26.0
 numpy>=1.26.0,<2.0.0
